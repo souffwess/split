@@ -215,10 +215,45 @@
     .settle b { color: var(--green); }
     .pos { color: var(--green); }
     .neg { color: var(--red); }
+
+    /* ---- The login screen (covers everything until you're signed in) ---- */
+    #auth-screen {
+      position: fixed; inset: 0; z-index: 1000;
+      background: var(--bg);
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .auth-card {
+      background: var(--card); border-radius: 14px; padding: 24px;
+      width: 100%; max-width: 360px; box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+    .auth-card h1 { margin: 0 0 6px; font-size: 26px; text-align: center; }
+    .auth-card .tagline { text-align: center; color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+    #auth-msg { min-height: 18px; }
+    #auth-msg.bad { color: var(--red); }
+    #auth-loading { text-align: center; color: var(--muted); padding: 20px 0; }
   </style>
 </head>
 
 <body>
+  <!-- Shown until you're logged in. Hidden once a session is active. -->
+  <div id="auth-screen">
+    <div class="auth-card">
+      <h1>💸 Split</h1>
+      <p class="tagline">Sign in to sync across your devices</p>
+      <div id="auth-loading">Loading…</div>
+      <div id="auth-form" style="display:none">
+        <p class="hint" id="auth-msg">Log in, or create an account the first time.</p>
+        <label for="auth-email">Email</label>
+        <input id="auth-email" type="email" autocomplete="username" />
+        <label for="auth-pass">Password</label>
+        <input id="auth-pass" type="password" autocomplete="current-password" />
+        <button class="primary" onclick="logIn()">Log in</button>
+        <button class="ghost" onclick="signUp()">Create account</button>
+      </div>
+    </div>
+  </div>
+
   <header>
     <div class="titlebar"><h1>💸 Split</h1></div>
     <select id="groupSelect" onchange="switchGroup(this.value)"></select>
@@ -312,6 +347,11 @@
         <h2>Your groups</h2>
         <div id="groups-list"></div>
       </div>
+      <div class="card">
+        <h2>Account</h2>
+        <p class="hint" id="account-email"></p>
+        <button class="ghost" onclick="logOut()">Log out</button>
+      </div>
     </section>
   </main>
 
@@ -330,7 +370,21 @@
     </button>
   </nav>
 
+  <!-- Supabase library: handles the login + cloud database for us -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
+    /* =========================================================
+       CLOUD CONNECTION
+       These two values point the app at YOUR Supabase project.
+       They are safe to be public — your data is protected by the
+       login + the security rules ("RLS") you set up in Supabase.
+       ========================================================= */
+    const SUPABASE_URL = 'https://msrohxrsresejyamgthz.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_Vq98KSoz4zTHfeM44UcQTA_IBXRmsJ1';
+    const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    let user = null;          // the logged-in user (null until you sign in)
+    let cloudTimer = null;    // used to avoid saving to the cloud on every keystroke
+
     /* =========================================================
        THE DATA
        Everything is organised into GROUPS. Each group looks like:
@@ -404,11 +458,119 @@
       try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : fallback; }
       catch (e) { return fallback; }
     }
-    function save() {
+    // Save to the phone's own storage (instant, offline backup).
+    function saveLocal() {
       try {
         localStorage.setItem('split_groups', JSON.stringify(groups));
         localStorage.setItem('split_currentGroup', JSON.stringify(currentId));
       } catch (e) { /* storage unavailable — app keeps working for this session */ }
+    }
+    // Save everywhere: locally now, and up to the cloud a moment later.
+    function save() { saveLocal(); scheduleCloudSave(); }
+
+    /* =========================================================
+       CLOUD SYNC
+       The whole data blob ({groups, currentId}) is stored as one
+       row in your Supabase "app_data" table, keyed to your account.
+       ========================================================= */
+
+    // Wait a beat after the last change, then push to the cloud (so a
+    // burst of edits becomes one upload instead of many).
+    function scheduleCloudSave() {
+      if (!user) return;
+      clearTimeout(cloudTimer);
+      cloudTimer = setTimeout(pushCloud, 700);
+    }
+    async function pushCloud() {
+      if (!user) return;
+      try {
+        await db.from('app_data').upsert({
+          user_id: user.id,
+          data: { groups, currentId },
+          updated_at: new Date().toISOString()
+        });
+      } catch (e) { console.warn('Cloud save failed:', e); }
+    }
+
+    // Pull the latest data down from the cloud.
+    async function pullCloud() {
+      try {
+        const { data, error } = await db.from('app_data')
+          .select('data').eq('user_id', user.id).maybeSingle();
+        if (error) { console.warn(error); return; }
+        if (data && data.data && Array.isArray(data.data.groups) && data.data.groups.length) {
+          // cloud has data → use it as the source of truth
+          groups = data.data.groups;
+          groups.forEach(g => g.expenses = (g.expenses || []).map(normalizeExpense));
+          currentId = data.data.currentId;
+          if (!groups.find(g => g.id === currentId)) currentId = groups[0].id;
+          saveLocal();
+        } else {
+          // cloud is empty → this is your first login, so upload what's
+          // already on this device (your existing expenses)
+          await pushCloud();
+        }
+      } catch (e) { console.warn(e); }
+    }
+
+    /* =========================================================
+       LOGIN / SIGN-UP / LOG-OUT
+       ========================================================= */
+    function authMsg(text, bad) {
+      const el = document.getElementById('auth-msg');
+      el.textContent = text;
+      el.className = 'hint' + (bad ? ' bad' : '');
+    }
+    function showApp()  { document.getElementById('auth-screen').style.display = 'none'; }
+    function showLogin() {
+      document.getElementById('auth-loading').style.display = 'none';
+      document.getElementById('auth-form').style.display = 'block';
+      document.getElementById('auth-screen').style.display = 'flex';
+    }
+
+    async function logIn() {
+      const email = document.getElementById('auth-email').value.trim();
+      const password = document.getElementById('auth-pass').value;
+      if (!email || !password) { authMsg('Enter your email and password.', true); return; }
+      authMsg('Logging in…');
+      const { data, error } = await db.auth.signInWithPassword({ email, password });
+      if (error) { authMsg(error.message, true); return; }
+      user = data.user;
+      await afterLogin();
+    }
+    async function signUp() {
+      const email = document.getElementById('auth-email').value.trim();
+      const password = document.getElementById('auth-pass').value;
+      if (!email || password.length < 6) { authMsg('Enter an email and a password of at least 6 characters.', true); return; }
+      authMsg('Creating account…');
+      const { data, error } = await db.auth.signUp({ email, password });
+      if (error) { authMsg(error.message, true); return; }
+      if (data.session) { user = data.user; await afterLogin(); }
+      else { authMsg('Account created — now tap "Log in".'); }
+    }
+    async function logOut() {
+      await db.auth.signOut();
+      location.reload(); // simplest clean reset back to the login screen
+    }
+    async function afterLogin() {
+      await pullCloud();
+      render();
+      showApp();
+    }
+
+    // Runs once when the app opens: shows the app if you're already
+    // logged in, otherwise the login screen. Also re-pulls the latest
+    // data whenever you return to the app, so devices stay in sync.
+    async function initAuth() {
+      try {
+        const { data: { session } } = await db.auth.getSession();
+        if (session) { user = session.user; await pullCloud(); render(); showApp(); }
+        else { showLogin(); }
+      } catch (e) { showLogin(); }
+
+      const refresh = () => { if (user && editingId === null && !document.hidden) pullCloud().then(render); };
+      window.addEventListener('focus', refresh);
+      document.addEventListener('visibilitychange', refresh);
     }
 
     // Shortcut to the currently-selected group object.
@@ -928,11 +1090,16 @@
       } else {
         payCard.style.display = 'none';
       }
+
+      // ---- account ----
+      const acct = document.getElementById('account-email');
+      if (acct) acct.textContent = user ? ('Signed in as ' + user.email) : '';
     }
 
-    // first draw
+    // first draw, then check login and sync
     resetForm(); // sets today's date and a clean form
     render();
+    initAuth();
   </script>
 </body>
 </html>
