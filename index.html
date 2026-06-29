@@ -497,6 +497,31 @@
       render();
     }
 
+    function renamePerson(index) {
+      const people = cur().people;
+      const oldName = people[index];
+      const input = prompt('Rename person:', oldName);
+      if (input === null) return;                 // cancelled
+      const newName = input.trim();
+      if (!newName || newName === oldName) return; // nothing to do
+      if (people.includes(newName)) { alert(newName + ' is already in this group.'); return; }
+
+      // swap the old name for the new one everywhere in this group
+      const ren = n => (n === oldName ? newName : n);
+      cur().people = people.map(ren);
+      cur().expenses.forEach(e => {
+        e.payer = ren(e.payer);
+        e.sharedBy = (e.sharedBy || []).map(ren);
+        if (e.shares && e.shares[oldName] !== undefined)   { e.shares[newName]   = e.shares[oldName];   delete e.shares[oldName]; }
+        if (e.percents && e.percents[oldName] !== undefined) { e.percents[newName] = e.percents[oldName]; delete e.percents[oldName]; }
+      });
+      cur().payments.forEach(p => { p.from = ren(p.from); p.to = ren(p.to); });
+
+      if (editingId !== null) cancelEdit(); // the open form may reference the old name
+      save();
+      render();
+    }
+
     function removePerson(index) {
       const name = cur().people[index];
       const inExpense = cur().expenses.some(e => e.payer === name || sharesOf(e)[name] !== undefined);
@@ -810,7 +835,10 @@
         ? people.map((p, idx) => `
             <div class="row">
               <span class="title">${escapeHtml(p)}</span>
-              <button class="icon-btn" onclick="removePerson(${idx})">🗑️</button>
+              <div style="display:flex;align-items:center;gap:4px">
+                <button class="icon-btn" onclick="renamePerson(${idx})">✏️</button>
+                <button class="icon-btn" onclick="removePerson(${idx})">🗑️</button>
+              </div>
             </div>`).join('')
         : '<div class="empty">No people yet</div>';
 
