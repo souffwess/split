@@ -8,6 +8,9 @@
     3. <script> ... how things WORK (the logic)
   Your data is saved on YOUR phone using the browser's "localStorage".
   Nothing is sent to the internet.
+
+  Data is organised into GROUPS (e.g. "Ski trip", "Roommates").
+  Each group has its own people, expenses, and payments.
 -->
 <html lang="en">
 <head>
@@ -48,14 +51,26 @@
     header {
       background: var(--green);
       color: white;
-      padding: 18px 16px;
-      padding-top: max(18px, env(safe-area-inset-top));
+      padding: 14px 16px;
+      padding-top: max(14px, env(safe-area-inset-top));
       position: sticky;
       top: 0;
       z-index: 10;
     }
+    header .titlebar { display: flex; align-items: center; justify-content: space-between; }
     header h1 { margin: 0; font-size: 20px; }
-    header p { margin: 2px 0 0; font-size: 13px; opacity: 0.85; }
+    /* the group picker lives in the header */
+    #groupSelect {
+      margin-top: 10px;
+      width: 100%;
+      background: rgba(255,255,255,0.15);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.35);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 14px;
+    }
+    #groupSelect option { color: #000; }
 
     /* ---- The tabs at the bottom ---- */
     nav {
@@ -70,8 +85,8 @@
       flex: 1;
       border: none;
       background: none;
-      padding: 12px 4px;
-      font-size: 12px;
+      padding: 12px 2px;
+      font-size: 11px;
       color: var(--muted);
       cursor: pointer;
     }
@@ -119,7 +134,7 @@
     }
     button.primary:active { background: var(--green-dark); }
 
-    /* a lighter, secondary button (used for "Cancel edit") */
+    /* a lighter, secondary button */
     button.ghost {
       width: 100%;
       background: none;
@@ -131,8 +146,9 @@
       margin-top: 8px;
       cursor: pointer;
     }
+    button.ghost.danger { color: var(--red); border-color: #f0c4be; }
 
-    /* a small inline button (used for "Mark paid" / "Undo") */
+    /* a small inline button */
     button.mini {
       background: var(--green);
       color: white;
@@ -146,7 +162,7 @@
     }
     button.mini.outline { background: none; color: var(--muted); border: 1px solid var(--line); }
 
-    /* ---- Lists of people / expenses ---- */
+    /* ---- Lists ---- */
     .row {
       display: flex;
       align-items: center;
@@ -175,24 +191,27 @@
     }
     .people-checks input { width: auto; }
 
-    /* the per-person amount rows for custom splits */
+    /* the per-person amount rows for custom / percentage splits */
     .split-row {
       display: flex; align-items: center; justify-content: space-between;
       gap: 10px; padding: 6px 0;
     }
-    .split-row span { flex: 1; font-size: 15px; }
-    .split-row input { width: 120px; }
+    .split-row span.name { flex: 1; font-size: 15px; }
+    .split-row .field { display: flex; align-items: center; gap: 4px; }
+    .split-row input { width: 110px; }
+    .split-row .unit { color: var(--muted); font-size: 14px; }
     .split-summary { font-size: 13px; color: var(--muted); margin-top: 8px; }
     .split-summary.bad { color: var(--red); }
 
-    .chip {
+    .tag {
       display: inline-block; font-size: 11px; color: var(--muted);
       background: var(--bg); border-radius: 6px; padding: 2px 7px; margin-left: 6px;
     }
+    .current-tag { color: var(--green); font-weight: 600; font-size: 12px; }
 
     .empty { color: var(--muted); text-align: center; padding: 24px 0; font-size: 14px; }
+    .hint { font-size: 12px; color: var(--muted); margin: 0 0 4px; }
 
-    .settle { color: var(--text); }
     .settle b { color: var(--green); }
     .pos { color: var(--green); }
     .neg { color: var(--red); }
@@ -201,8 +220,8 @@
 
 <body>
   <header>
-    <h1>💸 Split</h1>
-    <p id="subtitle">Track who owes whom</p>
+    <div class="titlebar"><h1>💸 Split</h1></div>
+    <select id="groupSelect" onchange="switchGroup(this.value)"></select>
   </header>
 
   <main>
@@ -217,8 +236,8 @@
         <label for="amount">Amount</label>
         <input id="amount" type="number" inputmode="decimal" placeholder="0.00" oninput="updateSplitSummary()" />
 
-        <label for="category">Category</label>
-        <select id="category"></select>
+        <label for="date">Date</label>
+        <input id="date" type="date" />
 
         <label for="payer">Who paid?</label>
         <select id="payer"></select>
@@ -226,12 +245,11 @@
         <label for="splitType">How to split?</label>
         <select id="splitType" onchange="renderParticipants()">
           <option value="equal">Equally</option>
-          <option value="custom">By exact amounts</option>
+          <option value="custom">By exact amounts ($)</option>
+          <option value="percent">By percentages (%)</option>
         </select>
 
-        <div id="participants-label-wrap">
-          <label id="participants-label">Split between (tap to include)</label>
-        </div>
+        <label id="participants-label">Split between (tap to include)</label>
         <div id="participants"></div>
         <div id="split-summary" class="split-summary"></div>
 
@@ -245,7 +263,7 @@
       </div>
     </section>
 
-    <!-- ============ PAGE 2: WHO OWES WHOM ============ -->
+    <!-- ============ PAGE 2: BALANCES ============ -->
     <section id="page-balances" class="page">
       <div class="card">
         <h2>Settle up</h2>
@@ -260,8 +278,9 @@
         <div id="balances"></div>
       </div>
       <div class="card">
-        <h2>Totals by category</h2>
-        <div id="category-totals"></div>
+        <h2>Tools</h2>
+        <button class="ghost" onclick="exportCSV()">⬇️ Export this group to CSV</button>
+        <button class="ghost danger" onclick="resetGroup()">🧹 Clear all expenses &amp; payments</button>
       </div>
     </section>
 
@@ -274,8 +293,23 @@
         <button class="primary" onclick="addPerson()">Add person</button>
       </div>
       <div class="card">
-        <h2>People</h2>
+        <h2>People in this group</h2>
         <div id="people-list"></div>
+      </div>
+    </section>
+
+    <!-- ============ PAGE 4: GROUPS ============ -->
+    <section id="page-groups" class="page">
+      <div class="card">
+        <h2>New group / trip</h2>
+        <p class="hint">Each group keeps its own people and expenses, separate from the others.</p>
+        <label for="groupName">Name</label>
+        <input id="groupName" placeholder="e.g. Ski trip, Roommates" />
+        <button class="primary" onclick="addGroup()">Create group</button>
+      </div>
+      <div class="card">
+        <h2>Your groups</h2>
+        <div id="groups-list"></div>
       </div>
     </section>
   </main>
@@ -290,132 +324,182 @@
     <button id="tab-people" onclick="showPage('people')">
       <span class="icon">👥</span>People
     </button>
+    <button id="tab-groups" onclick="showPage('groups')">
+      <span class="icon">📁</span>Groups
+    </button>
   </nav>
 
   <script>
     /* =========================================================
        THE DATA
-       Three lists: people, expenses, and payments (settle-ups).
-       We load them from the phone's storage when the app opens,
-       and save them back every time something changes.
+       Everything is organised into GROUPS. Each group looks like:
+         { id, name, people:[...], expenses:[...], payments:[...] }
+       We remember which group is currently selected (currentId).
        ========================================================= */
 
-    // The categories you can pick from (label + an emoji for display)
-    const CATEGORIES = [
-      { name: 'Food',          emoji: '🍽️' },
-      { name: 'Groceries',     emoji: '🛒' },
-      { name: 'Transport',     emoji: '🚗' },
-      { name: 'Rent',          emoji: '🏠' },
-      { name: 'Entertainment', emoji: '🎉' },
-      { name: 'Other',         emoji: '🧾' },
-    ];
-    function emojiFor(cat) {
-      const c = CATEGORIES.find(c => c.name === cat);
-      return c ? c.emoji : '🧾';
+    let groups = load('split_groups', null);
+    let currentId = load('split_currentGroup', null);
+
+    // First run OR upgrading from the old single-group version:
+    if (!groups) {
+      const oldPeople = load('split_people', null); // from the previous version, if any
+      if (oldPeople) {
+        // Move the user's existing data into a starter group so nothing is lost
+        groups = [{
+          id: Date.now(),
+          name: 'My Group',
+          people: oldPeople,
+          expenses: load('split_expenses', []).map(normalizeExpense),
+          payments: load('split_payments', [])
+        }];
+      } else {
+        groups = [{ id: Date.now(), name: 'My Group', people: ['Me'], expenses: [], payments: [] }];
+      }
     }
+    // make sure expenses always have the up-to-date shape
+    groups.forEach(g => g.expenses = g.expenses.map(normalizeExpense));
 
-    let people   = load('split_people', []);     // e.g. ["Me", "Alex"]
-    let expenses = load('split_expenses', []);   // see normalizeExpense() for shape
-    let payments = load('split_payments', []);   // each: {id, from, to, amount}
+    // pick a valid current group
+    if (!currentId || !groups.find(g => g.id === currentId)) currentId = groups[0].id;
+    save();
 
-    // Older saved expenses only had {id, desc, amount, payer, sharedBy}.
-    // This upgrades them so the new features work without losing your data.
-    expenses = expenses.map(normalizeExpense);
-
+    // Upgrades an expense to the current shape (older versions had different fields,
+    // e.g. a "category" we've since removed). This keeps old saved data working.
     function normalizeExpense(e) {
       return {
         id: e.id,
         desc: e.desc,
         amount: e.amount,
         payer: e.payer,
-        category: e.category || 'Other',          // default for old expenses
-        splitType: e.splitType || 'equal',        // default for old expenses
-        sharedBy: e.sharedBy || [],               // used when splitType = 'equal'
-        shares: e.shares || null                  // used when splitType = 'custom'
+        date: e.date || '',                  // older expenses had no date
+        splitType: e.splitType || 'equal',
+        sharedBy: e.sharedBy || [],          // used when splitType = 'equal'
+        shares: e.shares || null,            // used when splitType = 'custom'  ({name: dollars})
+        percents: e.percents || null         // used when splitType = 'percent' ({name: percent})
       };
     }
 
-    // Read saved data from the phone (or use a default if nothing saved yet).
-    // Wrapped in try/catch so the app still works even if the browser blocks
-    // storage (e.g. preview panels, private mode, or opening the file directly).
+    // Read/Write saved data, wrapped in try/catch so a blocked storage
+    // (preview panels, private mode) doesn't crash the app.
     function load(key, fallback) {
-      try {
-        const saved = localStorage.getItem(key);
-        return saved ? JSON.parse(saved) : fallback;
-      } catch (e) {
-        return fallback;
-      }
+      try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : fallback; }
+      catch (e) { return fallback; }
     }
-    // Write data back to the phone so it's there next time.
-    // If storage is blocked, we just skip saving instead of crashing.
     function save() {
       try {
-        localStorage.setItem('split_people', JSON.stringify(people));
-        localStorage.setItem('split_expenses', JSON.stringify(expenses));
-        localStorage.setItem('split_payments', JSON.stringify(payments));
-      } catch (e) {
-        /* storage unavailable — app keeps working for this session */
-      }
+        localStorage.setItem('split_groups', JSON.stringify(groups));
+        localStorage.setItem('split_currentGroup', JSON.stringify(currentId));
+      } catch (e) { /* storage unavailable — app keeps working for this session */ }
     }
 
-    // The very first time you open the app, add "Me" so you're in the list
-    if (people.length === 0) { people = ['Me']; save(); }
+    // Shortcut to the currently-selected group object.
+    function cur() { return groups.find(g => g.id === currentId); }
 
-    // Remembers which expense (if any) we're currently editing. null = adding new.
+    // Remembers which expense (if any) we're editing. null = adding new.
     let editingId = null;
-    // Holds the most recent settlement suggestions so the "Mark paid" buttons
-    // can refer to them safely by position (names might contain apostrophes).
+    // Holds the latest settlement suggestions so "Mark paid" can refer to them by position.
     let lastSettlements = [];
 
     /* =========================================================
-       SWITCHING PAGES (the bottom tabs)
+       DATES
+       ========================================================= */
+    function todayISO() {
+      const d = new Date();
+      const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+      return local.toISOString().slice(0, 10); // "2026-06-28"
+    }
+    function fmtDate(iso) {
+      if (!iso) return '';
+      const m = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const [y, mo, d] = iso.split('-');
+      return `${m[+mo - 1]} ${+d}, ${y}`;
+    }
+
+    /* =========================================================
+       SWITCHING TABS
        ========================================================= */
     function showPage(name) {
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
       document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
       document.getElementById('page-' + name).classList.add('active');
       document.getElementById('tab-' + name).classList.add('active');
-      render(); // refresh what's shown
+      render();
     }
 
     /* =========================================================
-       PEOPLE
+       GROUPS
+       ========================================================= */
+    function addGroup() {
+      const input = document.getElementById('groupName');
+      const name = input.value.trim();
+      if (!name) return;
+      const grp = { id: Date.now(), name, people: ['Me'], expenses: [], payments: [] };
+      groups.push(grp);
+      currentId = grp.id;        // switch to the new group
+      input.value = '';
+      cancelEdit();
+      save();
+      showPage('expenses');      // jump into the fresh group
+    }
+
+    function switchGroup(id) {
+      currentId = Number(id);
+      cancelEdit();
+      save();
+      render();
+    }
+
+    function renameGroup(id) {
+      const grp = groups.find(g => g.id === id);
+      const name = prompt('Rename group:', grp.name);
+      if (name && name.trim()) { grp.name = name.trim(); save(); render(); }
+    }
+
+    function deleteGroup(id) {
+      if (groups.length === 1) { alert("You can't delete your only group."); return; }
+      const grp = groups.find(g => g.id === id);
+      if (!confirm(`Delete the group "${grp.name}" and everything in it? This cannot be undone.`)) return;
+      groups = groups.filter(g => g.id !== id);
+      if (currentId === id) currentId = groups[0].id;
+      save();
+      render();
+    }
+
+    /* =========================================================
+       PEOPLE (within the current group)
        ========================================================= */
     function addPerson() {
       const input = document.getElementById('personName');
       const name = input.value.trim();
-      if (!name) return;                       // ignore empty
-      if (people.includes(name)) { alert(name + ' is already on the list'); return; }
-      people.push(name);
+      if (!name) return;
+      if (cur().people.includes(name)) { alert(name + ' is already on the list'); return; }
+      cur().people.push(name);
       input.value = '';
       save();
       render();
     }
 
     function removePerson(index) {
-      const name = people[index];
-      // Don't allow deleting someone who's involved in an expense or payment
-      const inExpense = expenses.some(e => e.payer === name || sharesOf(e)[name] !== undefined);
-      const inPayment = payments.some(p => p.from === name || p.to === name);
+      const name = cur().people[index];
+      const inExpense = cur().expenses.some(e => e.payer === name || sharesOf(e)[name] !== undefined);
+      const inPayment = cur().payments.some(p => p.from === name || p.to === name);
       if (inExpense || inPayment) {
         alert("Can't remove " + name + " — they're part of an expense or payment.");
         return;
       }
-      people.splice(index, 1);
+      cur().people.splice(index, 1);
       save();
       render();
     }
 
     /* =========================================================
-       THE EXPENSE FORM (used for both adding and editing)
+       THE EXPENSE FORM (adding and editing)
        ========================================================= */
-
-    // Draws the "split between" area depending on the chosen split type.
-    // `preset` is only passed when we load an expense for editing.
     function renderParticipants(preset) {
       const type = document.getElementById('splitType').value;
       const box = document.getElementById('participants');
       const label = document.getElementById('participants-label');
+      const people = cur().people;
 
       if (type === 'equal') {
         label.textContent = 'Split between (tap to include)';
@@ -426,88 +510,100 @@
             ${chosen.includes(p) ? 'checked' : ''}> ${escapeHtml(p)}</label>
         `).join('');
       } else {
-        label.textContent = 'Enter each person’s amount';
-        const shares = preset && preset.shares ? preset.shares : {};
+        const isPercent = type === 'percent';
+        label.textContent = isPercent ? 'Enter each person’s percentage' : 'Enter each person’s amount';
+        const values = preset ? (isPercent ? preset.percents : preset.shares) || {} : {};
         box.className = '';
         box.innerHTML = people.map(p => `
           <div class="split-row">
-            <span>${escapeHtml(p)}</span>
-            <input type="number" inputmode="decimal" placeholder="0.00"
-              data-name="${escapeAttr(p)}" value="${shares[p] != null ? shares[p] : ''}"
-              oninput="updateSplitSummary()">
+            <span class="name">${escapeHtml(p)}</span>
+            <span class="field">
+              ${isPercent ? '' : '<span class="unit">$</span>'}
+              <input type="number" inputmode="decimal" placeholder="0"
+                data-name="${escapeAttr(p)}" value="${values[p] != null ? values[p] : ''}"
+                oninput="updateSplitSummary()">
+              ${isPercent ? '<span class="unit">%</span>' : ''}
+            </span>
           </div>
         `).join('');
       }
       updateSplitSummary();
     }
 
-    // Shows "Assigned $X of $Y" under a custom split, and warns if it doesn't add up.
     function updateSplitSummary() {
       const summary = document.getElementById('split-summary');
-      if (document.getElementById('splitType').value !== 'custom') {
-        summary.textContent = '';
-        return;
-      }
-      const total = parseFloat(document.getElementById('amount').value) || 0;
+      const type = document.getElementById('splitType').value;
+      if (type === 'equal') { summary.textContent = ''; summary.className = 'split-summary'; return; }
+
       let assigned = 0;
-      document.querySelectorAll('#participants input').forEach(i => {
-        assigned += parseFloat(i.value) || 0;
-      });
-      const diff = Math.round((total - assigned) * 100) / 100;
-      summary.textContent = `Assigned ${money(assigned)} of ${money(total)}`
-        + (diff !== 0 ? ` · ${money(Math.abs(diff))} ${diff > 0 ? 'left' : 'over'}` : ' · ✓');
-      summary.className = 'split-summary' + (diff !== 0 ? ' bad' : '');
+      document.querySelectorAll('#participants input').forEach(i => assigned += parseFloat(i.value) || 0);
+
+      if (type === 'percent') {
+        const diff = Math.round((100 - assigned) * 100) / 100;
+        summary.textContent = `Assigned ${assigned}% of 100%` + (diff === 0 ? ' · ✓' : ` · ${Math.abs(diff)}% ${diff > 0 ? 'left' : 'over'}`);
+        summary.className = 'split-summary' + (diff !== 0 ? ' bad' : '');
+      } else {
+        const total = parseFloat(document.getElementById('amount').value) || 0;
+        const diff = Math.round((total - assigned) * 100) / 100;
+        summary.textContent = `Assigned ${money(assigned)} of ${money(total)}` + (diff === 0 ? ' · ✓' : ` · ${money(Math.abs(diff))} ${diff > 0 ? 'left' : 'over'}`);
+        summary.className = 'split-summary' + (diff !== 0 ? ' bad' : '');
+      }
     }
 
-    // Reads everything currently typed into the form into an expense object.
-    // Returns null (after showing an alert) if something is invalid.
+    // Reads the form into an expense object, or returns null (with an alert) if invalid.
     function readForm() {
       const desc = document.getElementById('desc').value.trim();
       const amount = parseFloat(document.getElementById('amount').value);
-      const category = document.getElementById('category').value;
+      const date = document.getElementById('date').value;
       const payer = document.getElementById('payer').value;
       const type = document.getElementById('splitType').value;
 
       if (!desc) { alert('Please add a description'); return null; }
       if (!amount || amount <= 0) { alert('Please enter a valid amount'); return null; }
 
-      let sharedBy = [], shares = null;
+      let sharedBy = [], shares = null, percents = null;
 
       if (type === 'equal') {
-        sharedBy = [...document.querySelectorAll('#participants input:checked')]
-                     .map(c => c.value);
+        sharedBy = [...document.querySelectorAll('#participants input:checked')].map(c => c.value);
         if (sharedBy.length === 0) { alert('Pick at least one person to split between'); return null; }
-      } else {
+      } else if (type === 'custom') {
         shares = {};
         document.querySelectorAll('#participants input').forEach(i => {
-          const v = parseFloat(i.value);
-          if (v > 0) shares[i.dataset.name] = v;
+          const v = parseFloat(i.value); if (v > 0) shares[i.dataset.name] = v;
         });
-        const names = Object.keys(shares);
-        if (names.length === 0) { alert('Enter an amount for at least one person'); return null; }
-        const sum = names.reduce((t, n) => t + shares[n], 0);
+        sharedBy = Object.keys(shares);
+        if (sharedBy.length === 0) { alert('Enter an amount for at least one person'); return null; }
+        const sum = sharedBy.reduce((t, n) => t + shares[n], 0);
         if (Math.abs(sum - amount) > 0.01) {
           alert(`The amounts add up to ${money(sum)}, but the total is ${money(amount)}.\nPlease make them match.`);
           return null;
         }
-        sharedBy = names;
+      } else { // percent
+        percents = {};
+        document.querySelectorAll('#participants input').forEach(i => {
+          const v = parseFloat(i.value); if (v > 0) percents[i.dataset.name] = v;
+        });
+        sharedBy = Object.keys(percents);
+        if (sharedBy.length === 0) { alert('Enter a percentage for at least one person'); return null; }
+        const sum = sharedBy.reduce((t, n) => t + percents[n], 0);
+        if (Math.abs(sum - 100) > 0.1) {
+          alert(`The percentages add up to ${sum}%, but they need to total 100%.`);
+          return null;
+        }
       }
 
-      return { desc, amount, category, payer, splitType: type, sharedBy, shares };
+      return { desc, amount, date, payer, splitType: type, sharedBy, shares, percents };
     }
 
     function saveExpense() {
       const data = readForm();
       if (!data) return;
-
       if (editingId !== null) {
-        // editing: replace the existing expense, keeping its id
-        const idx = expenses.findIndex(e => e.id === editingId);
-        if (idx !== -1) expenses[idx] = { id: editingId, ...data };
+        const idx = cur().expenses.findIndex(e => e.id === editingId);
+        if (idx !== -1) cur().expenses[idx] = { id: editingId, ...data };
         editingId = null;
       } else {
-        // adding: put a new expense at the top
-        expenses.unshift({ id: Date.now(), ...data });
+        cur().expenses.unshift({ id: Date.now(), ...data });
       }
       save();
       resetForm();
@@ -515,62 +611,54 @@
     }
 
     function editExpense(id) {
-      const e = expenses.find(x => x.id === id);
+      const e = cur().expenses.find(x => x.id === id);
       if (!e) return;
       editingId = id;
       document.getElementById('desc').value = e.desc;
       document.getElementById('amount').value = e.amount;
-      document.getElementById('category').value = e.category;
+      document.getElementById('date').value = e.date || todayISO();
       document.getElementById('payer').value = e.payer;
       document.getElementById('splitType').value = e.splitType;
-      renderParticipants({ sharedBy: e.sharedBy, shares: e.shares });
-
-      // switch the form into "edit mode"
+      renderParticipants({ sharedBy: e.sharedBy, shares: e.shares, percents: e.percents });
       document.getElementById('form-title').textContent = 'Edit expense';
       document.getElementById('save-btn').textContent = 'Save changes';
       document.getElementById('cancel-btn').style.display = 'block';
-
       showPage('expenses');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
-    function cancelEdit() {
-      editingId = null;
-      resetForm();
-    }
+    function cancelEdit() { editingId = null; resetForm(); }
 
-    // Clears the form and puts it back into "add new" mode.
     function resetForm() {
       editingId = null;
       document.getElementById('desc').value = '';
       document.getElementById('amount').value = '';
+      document.getElementById('date').value = todayISO();
       document.getElementById('splitType').value = 'equal';
       document.getElementById('form-title').textContent = 'Add an expense';
       document.getElementById('save-btn').textContent = 'Add expense';
       document.getElementById('cancel-btn').style.display = 'none';
-      renderParticipants(); // back to "everyone ticked"
+      renderParticipants();
     }
 
     function removeExpense(id) {
       if (editingId === id) cancelEdit();
-      expenses = expenses.filter(e => e.id !== id);
+      cur().expenses = cur().expenses.filter(e => e.id !== id);
       save();
       render();
     }
 
     /* =========================================================
-       THE MATH: who owes whom
-       For each expense we work out each person's SHARE (what they
-       owe). Then each person's NET balance is:
-          money they paid  -  their share of everything  +/-  settle-up payments
-       Positive = they're owed money. Negative = they owe.
+       THE MATH: who owes whom (within the current group)
        ========================================================= */
-
-    // Returns {name: amountOwed} for a single expense.
     function sharesOf(e) {
       if (e.splitType === 'custom' && e.shares) return e.shares;
-      // equal split: divide evenly between the people who shared it
-      const each = e.amount / e.sharedBy.length;
+      if (e.splitType === 'percent' && e.percents) {
+        const out = {};
+        for (const n in e.percents) out[n] = e.amount * e.percents[n] / 100;
+        return out;
+      }
+      const each = e.amount / e.sharedBy.length; // equal split
       const out = {};
       e.sharedBy.forEach(p => out[p] = each);
       return out;
@@ -578,22 +666,16 @@
 
     function calculateBalances() {
       const balance = {};
-      people.forEach(p => balance[p] = 0);
-
-      expenses.forEach(e => {
-        if (balance[e.payer] !== undefined) balance[e.payer] += e.amount; // payer fronted it
+      cur().people.forEach(p => balance[p] = 0);
+      cur().expenses.forEach(e => {
+        if (balance[e.payer] !== undefined) balance[e.payer] += e.amount;
         const shares = sharesOf(e);
-        for (const name in shares) {
-          if (balance[name] !== undefined) balance[name] -= shares[name];
-        }
+        for (const name in shares) if (balance[name] !== undefined) balance[name] -= shares[name];
       });
-
-      // a settle-up payment: 'from' gave money to 'to'
-      payments.forEach(p => {
+      cur().payments.forEach(p => {
         if (balance[p.from] !== undefined) balance[p.from] += p.amount;
         if (balance[p.to]   !== undefined) balance[p.to]   -= p.amount;
       });
-
       return balance;
     }
 
@@ -605,14 +687,12 @@
         if (amt > 0.005) creditors.push({ name, amt });
         else if (amt < -0.005) debtors.push({ name, amt: -amt });
       }
-
       const result = [];
       let i = 0, j = 0;
       while (i < debtors.length && j < creditors.length) {
         const pay = Math.min(debtors[i].amt, creditors[j].amt);
         result.push({ from: debtors[i].name, to: creditors[j].name, amt: Math.round(pay * 100) / 100 });
-        debtors[i].amt -= pay;
-        creditors[j].amt -= pay;
+        debtors[i].amt -= pay; creditors[j].amt -= pay;
         if (debtors[i].amt < 0.005) i++;
         if (creditors[j].amt < 0.005) j++;
       }
@@ -625,20 +705,55 @@
     function markPaid(index) {
       const s = lastSettlements[index];
       if (!s) return;
-      payments.push({ id: Date.now(), from: s.from, to: s.to, amount: s.amt });
+      cur().payments.push({ id: Date.now(), from: s.from, to: s.to, amount: s.amt });
       save();
       render();
     }
-
     function undoPayment(id) {
-      payments = payments.filter(p => p.id !== id);
+      cur().payments = cur().payments.filter(p => p.id !== id);
       save();
       render();
     }
 
     /* =========================================================
-       SMALL HELPERS to keep names safe inside HTML
-       (so a name like "O'Brien" or "<x>" can't break the page)
+       RESET & EXPORT
+       ========================================================= */
+    function resetGroup() {
+      if (!confirm(`Clear ALL expenses and payments in "${cur().name}"?\nThe people stay. This cannot be undone.`)) return;
+      cur().expenses = [];
+      cur().payments = [];
+      cancelEdit();
+      save();
+      render();
+    }
+
+    function exportCSV() {
+      const grp = cur();
+      const rows = [['Date', 'Kind', 'Description', 'Amount', 'Paid by / From', 'Split / To']];
+      grp.expenses.slice().sort(byNewest).forEach(e => {
+        const shares = sharesOf(e);
+        const detail = Object.keys(shares).map(n => `${n}: ${money(shares[n])}`).join('; ');
+        rows.push([e.date || '', 'Expense', e.desc, e.amount.toFixed(2), e.payer, detail]);
+      });
+      grp.payments.forEach(p => {
+        rows.push(['', 'Payment', `${p.from} paid ${p.to}`, p.amount.toFixed(2), p.from, p.to]);
+      });
+      const csv = '﻿' + rows.map(r => r.map(csvCell).join(',')).join('\r\n');
+      const safeName = grp.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+      download(csv, `split-${safeName}-${todayISO()}.csv`);
+    }
+    function csvCell(v) { return `"${String(v).replace(/"/g, '""')}"`; }
+    function download(text, filename) {
+      const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    /* =========================================================
+       HELPERS
        ========================================================= */
     function money(n) { return '$' + (Math.round(n * 100) / 100).toFixed(2); }
     function escapeHtml(s) {
@@ -646,27 +761,34 @@
                       .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     }
     function escapeAttr(s) { return escapeHtml(s); }
+    // sort newest first; expenses without a date go to the bottom
+    function byNewest(a, b) {
+      const da = a.date || '', db = b.date || '';
+      if (da && db) return db.localeCompare(da) || b.id - a.id;
+      if (da) return -1;
+      if (db) return 1;
+      return b.id - a.id;
+    }
 
     /* =========================================================
        DRAWING EVERYTHING ON SCREEN
-       Called whenever data changes.
        ========================================================= */
     function render() {
-      // ---- category dropdown ----
-      document.getElementById('category').innerHTML =
-        CATEGORIES.map(c => `<option value="${c.name}">${c.emoji} ${c.name}</option>`).join('');
+      // ---- group picker in the header ----
+      document.getElementById('groupSelect').innerHTML =
+        groups.map(g => `<option value="${g.id}" ${g.id === currentId ? 'selected' : ''}>📁 ${escapeHtml(g.name)}</option>`).join('');
+
+      const people = cur().people;
 
       // ---- "who paid" dropdown ----
       document.getElementById('payer').innerHTML =
         people.map(p => `<option value="${escapeAttr(p)}">${escapeHtml(p)}</option>`).join('');
 
-      // ---- the "split between" area (only redraw when NOT mid-edit, so we
-      //      don't wipe out what the user is typing) ----
+      // redraw the split area unless we're mid-edit (so we don't wipe typing)
       if (editingId === null) renderParticipants();
 
-      // ---- the people list ----
-      const peopleList = document.getElementById('people-list');
-      peopleList.innerHTML = people.length
+      // ---- people list ----
+      document.getElementById('people-list').innerHTML = people.length
         ? people.map((p, idx) => `
             <div class="row">
               <span class="title">${escapeHtml(p)}</span>
@@ -674,17 +796,35 @@
             </div>`).join('')
         : '<div class="empty">No people yet</div>';
 
-      // ---- the expenses list ----
+      // ---- groups list ----
+      document.getElementById('groups-list').innerHTML = groups.map(g => `
+        <div class="row">
+          <div>
+            <div class="title">📁 ${escapeHtml(g.name)} ${g.id === currentId ? '<span class="current-tag">· current</span>' : ''}</div>
+            <div class="sub">${g.people.length} people · ${g.expenses.length} expense${g.expenses.length === 1 ? '' : 's'}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:4px">
+            ${g.id === currentId ? '' : `<button class="mini outline" onclick="switchGroup(${g.id})">Open</button>`}
+            <button class="icon-btn" onclick="renameGroup(${g.id})">✏️</button>
+            <button class="icon-btn" onclick="deleteGroup(${g.id})">🗑️</button>
+          </div>
+        </div>`).join('');
+
+      // ---- expenses list (newest first) ----
       const expList = document.getElementById('expense-list');
-      expList.innerHTML = expenses.length
-        ? expenses.map(e => {
+      const sorted = cur().expenses.slice().sort(byNewest);
+      expList.innerHTML = sorted.length
+        ? sorted.map(e => {
             const ways = Object.keys(sharesOf(e)).length;
-            const how = e.splitType === 'custom' ? 'custom split' : `split ${ways} way${ways>1?'s':''}`;
+            const how = e.splitType === 'custom'  ? 'custom split'
+                      : e.splitType === 'percent' ? 'split by %'
+                      : `split ${ways} way${ways > 1 ? 's' : ''}`;
+            const dateTag = e.date ? `<span class="tag">${fmtDate(e.date)}</span>` : '';
             return `
             <div class="row">
               <div>
-                <div class="title">${emojiFor(e.category)} ${escapeHtml(e.desc)}</div>
-                <div class="sub">${escapeHtml(e.payer)} paid · ${how}<span class="chip">${escapeHtml(e.category)}</span></div>
+                <div class="title">${escapeHtml(e.desc)}${dateTag}</div>
+                <div class="sub">${escapeHtml(e.payer)} paid · ${how}</div>
               </div>
               <div style="display:flex;align-items:center;gap:4px">
                 <span class="amount">${money(e.amount)}</span>
@@ -701,13 +841,11 @@
         const amt = balance[p];
         const cls = amt > 0.005 ? 'pos' : amt < -0.005 ? 'neg' : '';
         const text = amt > 0.005 ? 'is owed ' + money(amt)
-                   : amt < -0.005 ? 'owes ' + money(-amt)
-                   : 'settled up';
-        return `<div class="row"><span class="title">${escapeHtml(p)}</span>
-                  <span class="${cls}">${text}</span></div>`;
+                   : amt < -0.005 ? 'owes ' + money(-amt) : 'settled up';
+        return `<div class="row"><span class="title">${escapeHtml(p)}</span><span class="${cls}">${text}</span></div>`;
       }).join('');
 
-      // ---- settlements (with a "Mark paid" button each) ----
+      // ---- settlements ----
       lastSettlements = calculateSettlements();
       document.getElementById('settlements').innerHTML = lastSettlements.length
         ? lastSettlements.map((s, idx) => `
@@ -717,12 +855,11 @@
             </div>`).join('')
         : '<div class="empty">Everyone is settled up 🎉</div>';
 
-      // ---- recorded payments (with undo) ----
+      // ---- recorded payments ----
       const payCard = document.getElementById('payments-card');
-      const payList = document.getElementById('payments-list');
-      if (payments.length) {
+      if (cur().payments.length) {
         payCard.style.display = 'block';
-        payList.innerHTML = payments.map(p => `
+        document.getElementById('payments-list').innerHTML = cur().payments.map(p => `
           <div class="row">
             <span>${escapeHtml(p.from)} paid <b>${escapeHtml(p.to)}</b> ${money(p.amount)}</span>
             <button class="mini outline" onclick="undoPayment(${p.id})">Undo</button>
@@ -730,21 +867,10 @@
       } else {
         payCard.style.display = 'none';
       }
-
-      // ---- totals by category ----
-      const totals = {};
-      expenses.forEach(e => totals[e.category] = (totals[e.category] || 0) + e.amount);
-      const cats = CATEGORIES.filter(c => totals[c.name]);
-      document.getElementById('category-totals').innerHTML = cats.length
-        ? cats.map(c => `
-            <div class="row">
-              <span class="title">${c.emoji} ${c.name}</span>
-              <span class="amount">${money(totals[c.name])}</span>
-            </div>`).join('')
-        : '<div class="empty">No expenses yet</div>';
     }
 
-    // Draw everything when the app first opens
+    // first draw
+    resetForm(); // sets today's date and a clean form
     render();
   </script>
 </body>
