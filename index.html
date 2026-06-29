@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<!--
+  SPLIT - a simple expense splitting app
+  ----------------------------------------
+  This whole app lives in ONE file. There are three sections:
+    1. <style>  ... how things LOOK
+    2. <body>   ... what's on the SCREEN
+    3. <script> ... how things WORK (the logic)
+  Your data is saved on YOUR phone using the browser's "localStorage".
+  Nothing is sent to the internet.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <!-- This line makes the app fit a phone screen properly -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0e7c5a" />
+  <!-- These help it feel like a real app when added to the home screen -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Split</title>
+
+  <style>
+    /* ---- Colors & basic look, defined once so they're easy to change ---- */
+    :root {
+      --green: #0e7c5a;
+      --green-dark: #0a5e44;
+      --bg: #f4f5f7;
+      --card: #ffffff;
+      --text: #1d2127;
+      --muted: #6b7280;
+      --red: #c0392b;
+      --line: #e5e7eb;
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      /* leaves room so content isn't hidden behind phone notches/bars */
+      padding-bottom: 90px;
+    }
+
+    /* ---- The top bar ---- */
+    header {
+      background: var(--green);
+      color: white;
+      padding: 18px 16px;
+      padding-top: max(18px, env(safe-area-inset-top));
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    header h1 { margin: 0; font-size: 20px; }
+    header p { margin: 2px 0 0; font-size: 13px; opacity: 0.85; }
+
+    /* ---- The tabs at the bottom ---- */
+    nav {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      display: flex;
+      background: var(--card);
+      border-top: 1px solid var(--line);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    nav button {
+      flex: 1;
+      border: none;
+      background: none;
+      padding: 12px 4px;
+      font-size: 12px;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    nav button.active { color: var(--green); font-weight: 600; }
+    nav button .icon { font-size: 20px; display: block; margin-bottom: 2px; }
+
+    /* ---- General layout ---- */
+    main { padding: 16px; max-width: 600px; margin: 0 auto; }
+    .page { display: none; }
+    .page.active { display: block; }
+
+    .card {
+      background: var(--card);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+
+    h2 { font-size: 16px; margin: 4px 0 12px; }
+
+    label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+
+    input, select {
+      width: 100%;
+      padding: 12px;
+      font-size: 16px; /* 16px stops phones from zooming in when you tap a field */
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+      color: var(--text);
+    }
+
+    button.primary {
+      width: 100%;
+      background: var(--green);
+      color: white;
+      border: none;
+      padding: 14px;
+      font-size: 16px;
+      font-weight: 600;
+      border-radius: 10px;
+      margin-top: 16px;
+      cursor: pointer;
+    }
+    button.primary:active { background: var(--green-dark); }
+
+    /* ---- Lists of people / expenses ---- */
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .row:last-child { border-bottom: none; }
+    .row .title { font-weight: 500; }
+    .row .sub { font-size: 12px; color: var(--muted); }
+    .row .amount { font-weight: 600; }
+
+    .del {
+      background: none; border: none; color: var(--muted);
+      font-size: 18px; cursor: pointer; padding: 4px 8px;
+    }
+
+    /* the checkbox list for "who shared this expense" */
+    .people-checks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+    .people-checks label {
+      margin: 0;
+      display: flex; align-items: center; gap: 6px;
+      background: #fff; border: 1px solid var(--line);
+      padding: 8px 12px; border-radius: 20px; font-size: 14px; color: var(--text);
+    }
+    .people-checks input { width: auto; }
+
+    .empty { color: var(--muted); text-align: center; padding: 24px 0; font-size: 14px; }
+
+    .settle { color: var(--text); }
+    .settle b { color: var(--green); }
+    .pos { color: var(--green); }
+    .neg { color: var(--red); }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>💸 Split</h1>
+    <p id="subtitle">Track who owes whom</p>
+  </header>
+
+  <main>
+    <!-- ============ PAGE 1: EXPENSES ============ -->
+    <section id="page-expenses" class="page active">
+      <div class="card">
+        <h2>Add an expense</h2>
+        <label for="desc">What was it for?</label>
+        <input id="desc" placeholder="e.g. Dinner, Uber, Groceries" />
+
+        <label for="amount">Amount</label>
+        <input id="amount" type="number" inputmode="decimal" placeholder="0.00" />
+
+        <label for="payer">Who paid?</label>
+        <select id="payer"></select>
+
+        <label>Split between (tap to include)</label>
+        <div id="participants" class="people-checks"></div>
+
+        <button class="primary" onclick="addExpense()">Add expense</button>
+      </div>
+
+      <div class="card">
+        <h2>Recent expenses</h2>
+        <div id="expense-list"></div>
+      </div>
+    </section>
+
+    <!-- ============ PAGE 2: WHO OWES WHOM ============ -->
+    <section id="page-balances" class="page">
+      <div class="card">
+        <h2>Settle up</h2>
+        <div id="settlements"></div>
+      </div>
+      <div class="card">
+        <h2>Each person's balance</h2>
+        <div id="balances"></div>
+      </div>
+    </section>
+
+    <!-- ============ PAGE 3: PEOPLE ============ -->
+    <section id="page-people" class="page">
+      <div class="card">
+        <h2>Add a person</h2>
+        <label for="personName">Name</label>
+        <input id="personName" placeholder="e.g. Alex" />
+        <button class="primary" onclick="addPerson()">Add person</button>
+      </div>
+      <div class="card">
+        <h2>People</h2>
+        <div id="people-list"></div>
+      </div>
+    </section>
+  </main>
+
+  <nav>
+    <button id="tab-expenses" class="active" onclick="showPage('expenses')">
+      <span class="icon">🧾</span>Expenses
+    </button>
+    <button id="tab-balances" onclick="showPage('balances')">
+      <span class="icon">⚖️</span>Balances
+    </button>
+    <button id="tab-people" onclick="showPage('people')">
+      <span class="icon">👥</span>People
+    </button>
+  </nav>
+
+  <script>
+    /* =========================================================
+       THE DATA
+       We keep two lists: people and expenses.
+       We load them from the phone's storage when the app opens,
+       and save them back every time something changes.
+       ========================================================= */
+
+    let people = load('split_people', []);     // e.g. ["Me", "Alex"]
+    let expenses = load('split_expenses', []); // each: {id, desc, amount, payer, sharedBy:[...]}
+
+    // Read saved data from the phone (or use a default if nothing saved yet).
+    // Wrapped in try/catch so the app still works even if the browser blocks
+    // storage (e.g. preview panels, private mode, or opening the file directly).
+    function load(key, fallback) {
+      try {
+        const saved = localStorage.getItem(key);
+        return saved ? JSON.parse(saved) : fallback;
+      } catch (e) {
+        return fallback;
+      }
+    }
+    // Write data back to the phone so it's there next time.
+    // If storage is blocked, we just skip saving instead of crashing.
+    function save() {
+      try {
+        localStorage.setItem('split_people', JSON.stringify(people));
+        localStorage.setItem('split_expenses', JSON.stringify(expenses));
+      } catch (e) {
+        /* storage unavailable — app keeps working for this session */
+      }
+    }
+
+    // The very first time you open the app, add "Me" so you're in the list
+    if (people.length === 0) { people = ['Me']; save(); }
+
+    /* =========================================================
+       SWITCHING PAGES (the bottom tabs)
+       ========================================================= */
+    function showPage(name) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+      document.getElementById('page-' + name).classList.add('active');
+      document.getElementById('tab-' + name).classList.add('active');
+      render(); // refresh what's shown
+    }
+
+    /* =========================================================
+       PEOPLE
+       ========================================================= */
+    function addPerson() {
+      const input = document.getElementById('personName');
+      const name = input.value.trim();
+      if (!name) return;                       // ignore empty
+      if (people.includes(name)) { alert(name + ' is already on the list'); return; }
+      people.push(name);
+      input.value = '';
+      save();
+      render();
+    }
+
+    function removePerson(name) {
+      // Don't allow deleting someone who's involved in an expense
+      const used = expenses.some(e => e.payer === name || e.sharedBy.includes(name));
+      if (used) { alert("Can't remove " + name + " — they're part of an expense."); return; }
+      people = people.filter(p => p !== name);
+      save();
+      render();
+    }
+
+    /* =========================================================
+       EXPENSES
+       ========================================================= */
+    function addExpense() {
+      const desc = document.getElementById('desc').value.trim();
+      const amount = parseFloat(document.getElementById('amount').value);
+      const payer = document.getElementById('payer').value;
+      // collect everyone whose checkbox is ticked
+      const sharedBy = [...document.querySelectorAll('#participants input:checked')]
+                          .map(c => c.value);
+
+      if (!desc) { alert('Please add a description'); return; }
+      if (!amount || amount <= 0) { alert('Please enter a valid amount'); return; }
+      if (sharedBy.length === 0) { alert('Pick at least one person to split between'); return; }
+
+      expenses.unshift({                       // unshift = add to the top
+        id: Date.now(),                        // a simple unique id
+        desc, amount, payer, sharedBy
+      });
+      save();
+
+      // clear the form for the next entry
+      document.getElementById('desc').value = '';
+      document.getElementById('amount').value = '';
+      render();
+    }
+
+    function removeExpense(id) {
+      expenses = expenses.filter(e => e.id !== id);
+      save();
+      render();
+    }
+
+    /* =========================================================
+       THE MATH: who owes whom
+       Step 1: work out each person's NET balance.
+         - if you PAID, that's money you're owed (+)
+         - your SHARE of expenses is money you owe (-)
+       Step 2: match the people who are owed money with the people
+               who owe money, using as few payments as possible.
+       ========================================================= */
+    function calculateBalances() {
+      const balance = {};
+      people.forEach(p => balance[p] = 0);
+
+      expenses.forEach(e => {
+        const share = e.amount / e.sharedBy.length; // equal split
+        balance[e.payer] += e.amount;               // payer fronted the whole cost
+        e.sharedBy.forEach(p => balance[p] -= share); // everyone owes their share
+      });
+      return balance;
+    }
+
+    function calculateSettlements() {
+      const balance = calculateBalances();
+      // separate into people owed money (creditors) and people who owe (debtors)
+      const creditors = [], debtors = [];
+      for (const name in balance) {
+        const amt = Math.round(balance[name] * 100) / 100; // tidy to cents
+        if (amt > 0.005) creditors.push({ name, amt });
+        else if (amt < -0.005) debtors.push({ name, amt: -amt });
+      }
+
+      const payments = [];
+      let i = 0, j = 0;
+      // greedily settle the biggest debts against the biggest credits
+      while (i < debtors.length && j < creditors.length) {
+        const pay = Math.min(debtors[i].amt, creditors[j].amt);
+        payments.push({ from: debtors[i].name, to: creditors[j].name, amt: pay });
+        debtors[i].amt -= pay;
+        creditors[j].amt -= pay;
+        if (debtors[i].amt < 0.005) i++;
+        if (creditors[j].amt < 0.005) j++;
+      }
+      return payments;
+    }
+
+    /* =========================================================
+       DRAWING EVERYTHING ON SCREEN
+       Called whenever data changes.
+       ========================================================= */
+    function money(n) { return '$' + n.toFixed(2); }
+
+    function render() {
+      // ---- the "who paid" dropdown ----
+      const payerSelect = document.getElementById('payer');
+      payerSelect.innerHTML = people.map(p => `<option>${p}</option>`).join('');
+
+      // ---- the "split between" checkboxes (ticked by default) ----
+      document.getElementById('participants').innerHTML = people.map(p => `
+        <label><input type="checkbox" value="${p}" checked> ${p}</label>
+      `).join('');
+
+      // ---- the people list ----
+      const peopleList = document.getElementById('people-list');
+      peopleList.innerHTML = people.length
+        ? people.map(p => `
+            <div class="row">
+              <span class="title">${p}</span>
+              <button class="del" onclick="removePerson('${p}')">🗑️</button>
+            </div>`).join('')
+        : '<div class="empty">No people yet</div>';
+
+      // ---- the expenses list ----
+      const expList = document.getElementById('expense-list');
+      expList.innerHTML = expenses.length
+        ? expenses.map(e => `
+            <div class="row">
+              <div>
+                <div class="title">${e.desc}</div>
+                <div class="sub">${e.payer} paid · split ${e.sharedBy.length} way${e.sharedBy.length>1?'s':''}</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <span class="amount">${money(e.amount)}</span>
+                <button class="del" onclick="removeExpense(${e.id})">🗑️</button>
+              </div>
+            </div>`).join('')
+        : '<div class="empty">No expenses yet. Add one above!</div>';
+
+      // ---- balances ----
+      const balance = calculateBalances();
+      const balDiv = document.getElementById('balances');
+      balDiv.innerHTML = people.map(p => {
+        const amt = balance[p];
+        const cls = amt > 0.005 ? 'pos' : amt < -0.005 ? 'neg' : '';
+        const text = amt > 0.005 ? 'is owed ' + money(amt)
+                   : amt < -0.005 ? 'owes ' + money(-amt)
+                   : 'settled up';
+        return `<div class="row"><span class="title">${p}</span>
+                  <span class="${cls}">${text}</span></div>`;
+      }).join('');
+
+      // ---- settlements ----
+      const settlements = calculateSettlements();
+      const setDiv = document.getElementById('settlements');
+      setDiv.innerHTML = settlements.length
+        ? settlements.map(s => `
+            <div class="row settle">
+              <span>${s.from} → <b>${s.to}</b></span>
+              <span class="amount">${money(s.amt)}</span>
+            </div>`).join('')
+        : '<div class="empty">Everyone is settled up 🎉</div>';
+    }
+
+    // Draw everything when the app first opens
+    render();
+  </script>
+</body>
+</html>
