@@ -57,7 +57,8 @@
       top: 0;
       z-index: 10;
     }
-    header .titlebar { display: flex; align-items: center; justify-content: space-between; }
+    header .titlebar { display: flex; align-items: center; gap: 10px; }
+    .offline-badge { font-size: 11px; background: #b45309; color: #fff; padding: 3px 9px; border-radius: 10px; }
     header h1 { margin: 0; font-size: 20px; }
     /* the group picker lives in the header */
     #groupSelect {
@@ -255,7 +256,7 @@
   </div>
 
   <header>
-    <div class="titlebar"><h1>💸 Split</h1></div>
+    <div class="titlebar"><h1>💸 Split</h1><span id="offline-badge" class="offline-badge" style="display:none">Offline</span></div>
     <select id="groupSelect" onchange="switchGroup(this.value)"></select>
   </header>
 
@@ -329,6 +330,11 @@
         <button class="primary" onclick="addPerson()">Add person</button>
       </div>
       <div class="card">
+        <h2>Which person are you?</h2>
+        <p class="hint">Amounts turn green when you're owed and red when you owe.</p>
+        <select id="meSelect" onchange="setMe(this.value)"></select>
+      </div>
+      <div class="card">
         <h2>People in this group</h2>
         <div id="people-list"></div>
       </div>
@@ -384,6 +390,7 @@
     const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     let user = null;          // the logged-in user (null until you sign in)
     let cloudTimer = null;    // used to avoid saving to the cloud on every keystroke
+    let pendingSync = false;  // true when local changes haven't reached the cloud yet
 
     /* =========================================================
        THE DATA
@@ -394,6 +401,7 @@
 
     let groups = load('split_groups', null);
     let currentId = load('split_currentGroup', null);
+    let meName = load('split_meName', 'South'); // which person represents "you" (for the red/green coloring)
 
     // First run OR upgrading from the old single-group version:
     if (!groups) {
@@ -463,10 +471,14 @@
       try {
         localStorage.setItem('split_groups', JSON.stringify(groups));
         localStorage.setItem('split_currentGroup', JSON.stringify(currentId));
+        localStorage.setItem('split_meName', JSON.stringify(meName));
       } catch (e) { /* storage unavailable — app keeps working for this session */ }
     }
     // Save everywhere: locally now, and up to the cloud a moment later.
     function save() { saveLocal(); scheduleCloudSave(); }
+
+    // Set which person is "you" (drives the green/red amount coloring).
+    function setMe(name) { meName = name; save(); render(); }
 
     /* =========================================================
        CLOUD SYNC
@@ -484,12 +496,17 @@
     async function pushCloud() {
       if (!user) return;
       try {
-        await db.from('app_data').upsert({
+        const { error } = await db.from('app_data').upsert({
           user_id: user.id,
-          data: { groups, currentId },
+          data: { groups, currentId, meName },
           updated_at: new Date().toISOString()
         });
-      } catch (e) { console.warn('Cloud save failed:', e); }
+        if (error) throw error;
+        pendingSync = false;   // success — everything is up to date
+      } catch (e) {
+        pendingSync = true;    // failed (likely offline) — we'll retry on reconnect
+        console.warn('Cloud save failed (will retry):', e);
+      }
     }
 
     // Pull the latest data down from the cloud.
@@ -503,6 +520,7 @@
           groups = data.data.groups;
           groups.forEach(g => g.expenses = (g.expenses || []).map(normalizeExpense));
           currentId = data.data.currentId;
+          if (data.data.meName) meName = data.data.meName;
           if (!groups.find(g => g.id === currentId)) currentId = groups[0].id;
           saveLocal();
         } else {
@@ -561,6 +579,24 @@
     // Runs once when the app opens: shows the app if you're already
     // logged in, otherwise the login screen. Also re-pulls the latest
     // data whenever you return to the app, so devices stay in sync.
+    // Shows/hides the little "Offline" badge in the header.
+    function updateNetStatus() {
+      const b = document.getElementById('offline-badge');
+      if (b) b.style.display = navigator.onLine ? 'none' : 'inline-block';
+    }
+
+    // Keeps devices in sync, and handles reconnecting after being offline:
+    // first upload any changes that didn't make it up, then pull the latest.
+    async function syncNow() {
+      updateNetStatus();
+      if (!user) return;
+      if (pendingSync) await pushCloud();              // send offline edits up first
+      if (editingId === null && !document.hidden) {     // then refresh from the cloud
+        await pullCloud();
+        render();
+      }
+    }
+
     async function initAuth() {
       try {
         const { data: { session } } = await db.auth.getSession();
@@ -568,9 +604,11 @@
         else { showLogin(); }
       } catch (e) { showLogin(); }
 
-      const refresh = () => { if (user && editingId === null && !document.hidden) pullCloud().then(render); };
-      window.addEventListener('focus', refresh);
-      document.addEventListener('visibilitychange', refresh);
+      window.addEventListener('focus', syncNow);
+      document.addEventListener('visibilitychange', syncNow);
+      window.addEventListener('online', syncNow);          // reconnected → sync
+      window.addEventListener('offline', updateNetStatus); // lost connection → show badge
+      updateNetStatus();
     }
 
     // Shortcut to the currently-selected group object.
@@ -1003,6 +1041,11 @@
       document.getElementById('payer').innerHTML =
         people.map(p => `<option value="${escapeAttr(p)}">${escapeHtml(p)}</option>`).join('');
 
+      // ---- "which person are you?" dropdown ----
+      const meSel = document.getElementById('meSelect');
+      if (meSel) meSel.innerHTML =
+        people.map(p => `<option value="${escapeAttr(p)}" ${p === meName ? 'selected' : ''}>${escapeHtml(p)}</option>`).join('');
+
       // redraw the split area unless we're mid-edit (so we don't wipe typing)
       if (editingId === null) renderParticipants();
 
@@ -1043,6 +1086,11 @@
                       : e.splitType === 'percent' ? 'split by %'
                       : `split ${ways} way${ways > 1 ? 's' : ''}`;
             const dateTag = e.date ? `<span class="tag">${fmtDate(e.date)}</span>` : '';
+            // my position on this expense: what I paid minus my share.
+            // positive = I'm owed (green), negative = I owe (red), zero = not involved.
+            const sh = sharesOf(e);
+            const myNet = (e.payer === meName ? e.amount : 0) - (sh[meName] || 0);
+            const amtCls = myNet > 0.005 ? 'pos' : myNet < -0.005 ? 'neg' : '';
             return `
             <div class="row">
               <div>
@@ -1050,7 +1098,7 @@
                 <div class="sub">${escapeHtml(e.payer)} paid · ${how}</div>
               </div>
               <div style="display:flex;align-items:center;gap:4px">
-                <span class="amount">${money(e.amount)}</span>
+                <span class="amount ${amtCls}">${money(e.amount)}</span>
                 <button class="icon-btn" onclick="editExpense(${e.id})">✏️</button>
                 <button class="icon-btn" onclick="removeExpense(${e.id})">🗑️</button>
               </div>
@@ -1100,6 +1148,11 @@
     resetForm(); // sets today's date and a clean form
     render();
     initAuth();
+
+    // Register the service worker so the app can open with no connection.
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+    }
   </script>
 </body>
 </html>
