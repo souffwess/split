@@ -353,11 +353,29 @@
           payments: load('split_payments', [])
         }];
       } else {
-        groups = [{ id: Date.now(), name: 'My Group', people: ['Me'], expenses: [], payments: [] }];
+        groups = [{ id: Date.now(), name: 'My Group', people: ['South'], expenses: [], payments: [] }];
       }
     }
     // make sure expenses always have the up-to-date shape
     groups.forEach(g => g.expenses = g.expenses.map(normalizeExpense));
+
+    // One-time rename of the original default person "Me" to "South".
+    // (Runs once, then remembers it's done so it never touches a future "Me".)
+    if (!load('split_renamedMe', false)) {
+      const ren = n => (n === 'Me' ? 'South' : n);
+      groups.forEach(g => {
+        if (g.people.includes('South')) return; // avoid creating a duplicate
+        g.people = g.people.map(ren);
+        g.expenses.forEach(e => {
+          e.payer = ren(e.payer);
+          e.sharedBy = (e.sharedBy || []).map(ren);
+          if (e.shares && e.shares['Me'] !== undefined)   { e.shares['South'] = e.shares['Me']; delete e.shares['Me']; }
+          if (e.percents && e.percents['Me'] !== undefined) { e.percents['South'] = e.percents['Me']; delete e.percents['Me']; }
+        });
+        g.payments.forEach(p => { p.from = ren(p.from); p.to = ren(p.to); });
+      });
+      try { localStorage.setItem('split_renamedMe', 'true'); } catch (e) {}
+    }
 
     // pick a valid current group
     if (!currentId || !groups.find(g => g.id === currentId)) currentId = groups[0].id;
@@ -433,7 +451,7 @@
       const input = document.getElementById('groupName');
       const name = input.value.trim();
       if (!name) return;
-      const grp = { id: Date.now(), name, people: ['Me'], expenses: [], payments: [] };
+      const grp = { id: Date.now(), name, people: ['South'], expenses: [], payments: [] };
       groups.push(grp);
       currentId = grp.id;        // switch to the new group
       input.value = '';
