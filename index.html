@@ -245,6 +245,7 @@
         <label for="splitType">How to split?</label>
         <select id="splitType" onchange="renderParticipants()">
           <option value="equal">Equally</option>
+          <option value="full">One person owes the full amount</option>
           <option value="custom">By exact amounts ($)</option>
           <option value="percent">By percentages (%)</option>
         </select>
@@ -552,6 +553,13 @@
           <label><input type="checkbox" value="${escapeAttr(p)}"
             ${chosen.includes(p) ? 'checked' : ''}> ${escapeHtml(p)}</label>
         `).join('');
+      } else if (type === 'full') {
+        label.textContent = 'Who owes the full amount?';
+        const chosen = preset && preset.sharedBy ? preset.sharedBy[0] : null;
+        box.className = '';
+        box.innerHTML = `<select id="fullPerson">` + people.map(p =>
+          `<option value="${escapeAttr(p)}" ${p === chosen ? 'selected' : ''}>${escapeHtml(p)}</option>`
+        ).join('') + `</select>`;
       } else {
         const isPercent = type === 'percent';
         label.textContent = isPercent ? 'Enter each person’s percentage' : 'Enter each person’s amount';
@@ -576,7 +584,7 @@
     function updateSplitSummary() {
       const summary = document.getElementById('split-summary');
       const type = document.getElementById('splitType').value;
-      if (type === 'equal') { summary.textContent = ''; summary.className = 'split-summary'; return; }
+      if (type === 'equal' || type === 'full') { summary.textContent = ''; summary.className = 'split-summary'; return; }
 
       let assigned = 0;
       document.querySelectorAll('#participants input').forEach(i => assigned += parseFloat(i.value) || 0);
@@ -609,6 +617,11 @@
       if (type === 'equal') {
         sharedBy = [...document.querySelectorAll('#participants input:checked')].map(c => c.value);
         if (sharedBy.length === 0) { alert('Pick at least one person to split between'); return null; }
+      } else if (type === 'full') {
+        const sel = document.getElementById('fullPerson');
+        const person = sel ? sel.value : '';
+        if (!person) { alert('Pick who owes the full amount'); return null; }
+        sharedBy = [person];
       } else if (type === 'custom') {
         shares = {};
         document.querySelectorAll('#participants input').forEach(i => {
@@ -695,6 +708,7 @@
        THE MATH: who owes whom (within the current group)
        ========================================================= */
     function sharesOf(e) {
+      if (e.splitType === 'full') return { [e.sharedBy[0]]: e.amount };
       if (e.splitType === 'custom' && e.shares) return e.shares;
       if (e.splitType === 'percent' && e.percents) {
         const out = {};
@@ -862,7 +876,8 @@
       expList.innerHTML = sorted.length
         ? sorted.map(e => {
             const ways = Object.keys(sharesOf(e)).length;
-            const how = e.splitType === 'custom'  ? 'custom split'
+            const how = e.splitType === 'full'    ? `${escapeHtml(e.sharedBy[0])} owes it all`
+                      : e.splitType === 'custom'  ? 'custom split'
                       : e.splitType === 'percent' ? 'split by %'
                       : `split ${ways} way${ways > 1 ? 's' : ''}`;
             const dateTag = e.date ? `<span class="tag">${fmtDate(e.date)}</span>` : '';
