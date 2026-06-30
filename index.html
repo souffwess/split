@@ -301,7 +301,7 @@
         <input id="date" type="date" />
 
         <label for="payer">Who paid?</label>
-        <select id="payer"></select>
+        <select id="payer" onchange="formPayer = this.value"></select>
 
         <label for="splitType">How to split?</label>
         <select id="splitType" onchange="renderParticipants()">
@@ -316,8 +316,12 @@
         <div id="split-summary" class="split-summary"></div>
 
         <label>Receipt photo (optional)</label>
-        <input id="receipt-input" type="file" accept="image/*" style="display:none" onchange="onReceiptPicked(this)" />
-        <button type="button" class="ghost" onclick="document.getElementById('receipt-input').click()">📷 Take / choose photo</button>
+        <input id="receipt-input-camera" type="file" accept="image/*" capture="environment" style="display:none" onchange="onReceiptPicked(this)" />
+        <input id="receipt-input-gallery" type="file" accept="image/*" style="display:none" onchange="onReceiptPicked(this)" />
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="ghost" style="flex:1" onclick="document.getElementById('receipt-input-camera').click()">📷 Take photo</button>
+          <button type="button" class="ghost" style="flex:1" onclick="document.getElementById('receipt-input-gallery').click()">🖼️ Choose photo</button>
+        </div>
         <div id="receipt-preview" style="display:none; margin-top:8px;">
           <img id="receipt-thumb" class="receipt-thumb" alt="receipt preview" />
           <button type="button" class="ghost danger" onclick="removeReceiptFromForm()">Remove photo</button>
@@ -656,6 +660,8 @@
     // Receipt-photo state for the expense form:
     let pendingReceiptFile = null; // a freshly picked photo, waiting to upload on save
     let formReceiptPath = null;    // the receipt already attached to the expense being edited
+    // Which payer the form should show (survives screen redraws). Defaults to you.
+    let formPayer = null;
 
     /* =========================================================
        DATES
@@ -924,6 +930,7 @@
       const e = cur().expenses.find(x => x.id === id);
       if (!e) return;
       editingId = id;
+      formPayer = e.payer; // keep the payer this expense was saved with
       document.getElementById('desc').value = e.desc;
       document.getElementById('amount').value = e.amount;
       document.getElementById('date').value = e.date || todayISO();
@@ -953,17 +960,20 @@
       document.getElementById('form-title').textContent = 'Add an expense';
       document.getElementById('save-btn').textContent = 'Add expense';
       document.getElementById('cancel-btn').style.display = 'none';
+      formPayer = meName; // a fresh expense defaults the payer to you
       pendingReceiptFile = null;
       formReceiptPath = null;
-      document.getElementById('receipt-input').value = '';
+      clearReceiptInputs();
       hideReceiptPreview();
       renderParticipants();
     }
 
     async function removeExpense(id) {
-      if (editingId === id) cancelEdit();
       const e = cur().expenses.find(x => x.id === id);
-      if (e && e.receipt) await deleteReceipt(e.receipt);
+      if (!e) return;
+      if (!confirm(`Delete this expense?\n\n${e.desc} — ${money(e.amount)}\n\nThis can't be undone.`)) return;
+      if (editingId === id) cancelEdit();
+      if (e.receipt) await deleteReceipt(e.receipt);
       cur().expenses = cur().expenses.filter(x => x.id !== id);
       save();
       render();
@@ -988,8 +998,14 @@
     function removeReceiptFromForm() {
       pendingReceiptFile = null;
       formReceiptPath = null;
-      document.getElementById('receipt-input').value = '';
+      clearReceiptInputs();
       hideReceiptPreview();
+    }
+    function clearReceiptInputs() {
+      const c = document.getElementById('receipt-input-camera');
+      const g = document.getElementById('receipt-input-gallery');
+      if (c) c.value = '';
+      if (g) g.value = '';
     }
     function showReceiptPreview(url) {
       document.getElementById('receipt-thumb').src = url;
@@ -1291,8 +1307,10 @@
       const people = cur().people;
 
       // ---- "who paid" dropdown ----
-      document.getElementById('payer').innerHTML =
-        people.map(p => `<option value="${escapeAttr(p)}">${escapeHtml(p)}</option>`).join('');
+      const payerSel = document.getElementById('payer');
+      payerSel.innerHTML = people.map(p => `<option value="${escapeAttr(p)}">${escapeHtml(p)}</option>`).join('');
+      payerSel.value = (formPayer && people.includes(formPayer)) ? formPayer
+                       : (people.includes(meName) ? meName : people[0]);
 
       // ---- "which person are you?" dropdown ----
       const meSel = document.getElementById('meSelect');
