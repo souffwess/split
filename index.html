@@ -286,8 +286,24 @@
   </header>
 
   <main>
+    <!-- ============ HOME / DASHBOARD ============ -->
+    <section id="page-home" class="page active">
+      <div class="card" style="text-align:center">
+        <div class="hint">Across all your groups</div>
+        <div id="home-net" style="font-size:24px; font-weight:700; margin-top:4px;"></div>
+      </div>
+      <div class="card">
+        <h2>You're owed</h2>
+        <div id="home-owed"></div>
+      </div>
+      <div class="card">
+        <h2>You owe</h2>
+        <div id="home-owe"></div>
+      </div>
+    </section>
+
     <!-- ============ PAGE 1: EXPENSES ============ -->
-    <section id="page-expenses" class="page active">
+    <section id="page-expenses" class="page">
       <div class="card">
         <h2 id="form-title">Add an expense</h2>
 
@@ -400,7 +416,10 @@
   </main>
 
   <nav>
-    <button id="tab-expenses" class="active" onclick="showPage('expenses')">
+    <button id="tab-home" class="active" onclick="showPage('home')">
+      <span class="icon">🏠</span>Home
+    </button>
+    <button id="tab-expenses" onclick="showPage('expenses')">
       <span class="icon">🧾</span>Expenses
     </button>
     <button id="tab-balances" onclick="showPage('balances')">
@@ -1104,23 +1123,24 @@
       return out;
     }
 
-    function calculateBalances() {
+    function calculateBalances(g) {
+      g = g || cur();
       const balance = {};
-      cur().people.forEach(p => balance[p] = 0);
-      cur().expenses.forEach(e => {
+      g.people.forEach(p => balance[p] = 0);
+      g.expenses.forEach(e => {
         if (balance[e.payer] !== undefined) balance[e.payer] += e.amount;
         const shares = sharesOf(e);
         for (const name in shares) if (balance[name] !== undefined) balance[name] -= shares[name];
       });
-      cur().payments.forEach(p => {
+      g.payments.forEach(p => {
         if (balance[p.from] !== undefined) balance[p.from] += p.amount;
         if (balance[p.to]   !== undefined) balance[p.to]   -= p.amount;
       });
       return balance;
     }
 
-    function calculateSettlements() {
-      const balance = calculateBalances();
+    function calculateSettlements(g) {
+      const balance = calculateBalances(g);
       const creditors = [], debtors = [];
       for (const name in balance) {
         const amt = Math.round(balance[name] * 100) / 100;
@@ -1410,6 +1430,38 @@
       } else {
         payCard.style.display = 'none';
       }
+
+      // ---- home dashboard (across ALL groups, from your point of view) ----
+      const owedRows = [], oweRows = [];
+      let net = 0;
+      const inAnyGroup = groups.some(g => g.people.includes(meName));
+      groups.forEach(g => {
+        if (!g.people.includes(meName)) return; // you're not part of this group
+        net += calculateBalances(g)[meName] || 0;
+        calculateSettlements(g).forEach(s => {
+          if (s.to === meName)        owedRows.push({ name: s.from, group: g.name, amt: s.amt });
+          else if (s.from === meName) oweRows.push({ name: s.to,   group: g.name, amt: s.amt });
+        });
+      });
+      owedRows.sort((a, b) => b.amt - a.amt);
+      oweRows.sort((a, b) => b.amt - a.amt);
+
+      const netEl = document.getElementById('home-net');
+      if (!inAnyGroup)            { netEl.textContent = 'No balances yet'; netEl.className = ''; }
+      else if (net > 0.005)       { netEl.textContent = 'You are owed ' + money(net); netEl.className = 'pos'; }
+      else if (net < -0.005)      { netEl.textContent = 'You owe ' + money(-net); netEl.className = 'neg'; }
+      else                        { netEl.textContent = "You're all settled up 🎉"; netEl.className = ''; }
+
+      const homeRow = (r, cls) => `<div class="row">
+          <div><div class="title">${escapeHtml(r.name)}</div><div class="sub">📁 ${escapeHtml(r.group)}</div></div>
+          <span class="amount ${cls}">${money(r.amt)}</span>
+        </div>`;
+      document.getElementById('home-owed').innerHTML = owedRows.length
+        ? owedRows.map(r => homeRow(r, 'pos')).join('')
+        : '<div class="empty">No one owes you right now</div>';
+      document.getElementById('home-owe').innerHTML = oweRows.length
+        ? oweRows.map(r => homeRow(r, 'neg')).join('')
+        : '<div class="empty">You don’t owe anyone right now</div>';
 
       // ---- account ----
       const acct = document.getElementById('account-email');
