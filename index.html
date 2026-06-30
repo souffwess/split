@@ -233,6 +233,22 @@
     #auth-msg { min-height: 18px; }
     #auth-msg.bad { color: var(--red); }
     #auth-loading { text-align: center; color: var(--muted); padding: 20px 0; }
+
+    /* ---- Receipt photos ---- */
+    .receipt-thumb {
+      display: block; max-width: 100%; max-height: 200px;
+      border-radius: 10px; border: 1px solid var(--line); margin-bottom: 8px;
+    }
+    #receipt-viewer {
+      position: fixed; inset: 0; z-index: 1100;
+      background: rgba(0,0,0,0.85);
+      display: none; align-items: center; justify-content: center; padding: 16px;
+    }
+    .viewer-inner {
+      background: var(--card); border-radius: 14px; padding: 16px;
+      max-width: 100%; max-height: 100%; overflow: auto; text-align: center;
+    }
+    #receipt-viewer-img { max-width: 100%; max-height: 75vh; border-radius: 8px; }
   </style>
 </head>
 
@@ -252,6 +268,15 @@
         <button class="primary" onclick="logIn()">Log in</button>
         <button class="ghost" onclick="signUp()">Create account</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Tap a receipt to view it full-size here. -->
+  <div id="receipt-viewer" onclick="closeReceiptViewer()">
+    <div class="viewer-inner" onclick="event.stopPropagation()">
+      <img id="receipt-viewer-img" alt="receipt" />
+      <p id="receipt-viewer-msg" class="hint"></p>
+      <button class="ghost" onclick="closeReceiptViewer()">Close</button>
     </div>
   </div>
 
@@ -289,6 +314,14 @@
         <label id="participants-label">Split between (tap to include)</label>
         <div id="participants"></div>
         <div id="split-summary" class="split-summary"></div>
+
+        <label>Receipt photo (optional)</label>
+        <input id="receipt-input" type="file" accept="image/*" capture="environment" style="display:none" onchange="onReceiptPicked(this)" />
+        <button type="button" class="ghost" onclick="document.getElementById('receipt-input').click()">📷 Take / choose photo</button>
+        <div id="receipt-preview" style="display:none; margin-top:8px;">
+          <img id="receipt-thumb" class="receipt-thumb" alt="receipt preview" />
+          <button type="button" class="ghost danger" onclick="removeReceiptFromForm()">Remove photo</button>
+        </div>
 
         <button id="save-btn" class="primary" onclick="saveExpense()">Add expense</button>
         <button id="cancel-btn" class="ghost" style="display:none" onclick="cancelEdit()">Cancel edit</button>
@@ -456,7 +489,8 @@
         splitType: e.splitType || 'equal',
         sharedBy: e.sharedBy || [],          // used when splitType = 'equal'
         shares: e.shares || null,            // used when splitType = 'custom'  ({name: dollars})
-        percents: e.percents || null         // used when splitType = 'percent' ({name: percent})
+        percents: e.percents || null,        // used when splitType = 'percent' ({name: percent})
+        receipt: e.receipt || null           // storage path of the receipt photo, or null
       };
     }
 
@@ -618,6 +652,9 @@
     let editingId = null;
     // Holds the latest settlement suggestions so "Mark paid" can refer to them by position.
     let lastSettlements = [];
+    // Receipt-photo state for the expense form:
+    let pendingReceiptFile = null; // a freshly picked photo, waiting to upload on save
+    let formReceiptPath = null;    // the receipt already attached to the expense being edited
 
     /* =========================================================
        DATES
@@ -851,15 +888,31 @@
       return { desc, amount, date, payer, splitType: type, sharedBy, shares, percents };
     }
 
-    function saveExpense() {
+    async function saveExpense() {
       const data = readForm();
       if (!data) return;
+      const id = editingId !== null ? editingId : Date.now();
+
+      // Work out the receipt photo for this expense.
+      let receiptPath = formReceiptPath; // keep the existing one by default
+      if (pendingReceiptFile) {
+        const btn = document.getElementById('save-btn');
+        btn.disabled = true; btn.textContent = 'Uploading photo…';
+        receiptPath = await uploadReceipt(id, pendingReceiptFile);
+        btn.disabled = false;
+      } else if (formReceiptPath === null && editingId !== null) {
+        // editing, and the existing photo was removed → delete it from storage
+        const existing = cur().expenses.find(e => e.id === editingId);
+        if (existing && existing.receipt) await deleteReceipt(existing.receipt);
+      }
+      data.receipt = receiptPath || null;
+
       if (editingId !== null) {
         const idx = cur().expenses.findIndex(e => e.id === editingId);
-        if (idx !== -1) cur().expenses[idx] = { id: editingId, ...data };
+        if (idx !== -1) cur().expenses[idx] = { id, ...data };
         editingId = null;
       } else {
-        cur().expenses.unshift({ id: Date.now(), ...data });
+        cur().expenses.unshift({ id, ...data });
       }
       save();
       resetForm();
@@ -876,6 +929,11 @@
       document.getElementById('payer').value = e.payer;
       document.getElementById('splitType').value = e.splitType;
       renderParticipants({ sharedBy: e.sharedBy, shares: e.shares, percents: e.percents });
+      // load any existing receipt photo into the form
+      pendingReceiptFile = null;
+      formReceiptPath = e.receipt || null;
+      hideReceiptPreview();
+      if (formReceiptPath) showExistingReceiptThumb(formReceiptPath);
       document.getElementById('form-title').textContent = 'Edit expense';
       document.getElementById('save-btn').textContent = 'Save changes';
       document.getElementById('cancel-btn').style.display = 'block';
@@ -894,14 +952,122 @@
       document.getElementById('form-title').textContent = 'Add an expense';
       document.getElementById('save-btn').textContent = 'Add expense';
       document.getElementById('cancel-btn').style.display = 'none';
+      pendingReceiptFile = null;
+      formReceiptPath = null;
+      document.getElementById('receipt-input').value = '';
+      hideReceiptPreview();
       renderParticipants();
     }
 
-    function removeExpense(id) {
+    async function removeExpense(id) {
       if (editingId === id) cancelEdit();
-      cur().expenses = cur().expenses.filter(e => e.id !== id);
+      const e = cur().expenses.find(x => x.id === id);
+      if (e && e.receipt) await deleteReceipt(e.receipt);
+      cur().expenses = cur().expenses.filter(x => x.id !== id);
       save();
       render();
+    }
+
+    /* =========================================================
+       RECEIPT PHOTOS
+       Photos live in your private Supabase "receipts" storage, under
+       a folder named with your user id: "<your-id>/<expense-id>.jpg".
+       The expense just remembers that path; we fetch a temporary
+       signed link whenever you want to view it.
+       ========================================================= */
+
+    // When you pick/take a photo, remember it and show a preview.
+    function onReceiptPicked(input) {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      pendingReceiptFile = file;
+      formReceiptPath = null;
+      showReceiptPreview(URL.createObjectURL(file));
+    }
+    function removeReceiptFromForm() {
+      pendingReceiptFile = null;
+      formReceiptPath = null;
+      document.getElementById('receipt-input').value = '';
+      hideReceiptPreview();
+    }
+    function showReceiptPreview(url) {
+      document.getElementById('receipt-thumb').src = url;
+      document.getElementById('receipt-preview').style.display = 'block';
+    }
+    function hideReceiptPreview() {
+      document.getElementById('receipt-preview').style.display = 'none';
+      document.getElementById('receipt-thumb').src = '';
+    }
+    async function showExistingReceiptThumb(path) {
+      try {
+        const { data, error } = await db.storage.from('receipts').createSignedUrl(path, 3600);
+        if (!error && data) showReceiptPreview(data.signedUrl);
+      } catch (e) { /* offline: keep the path, just can't show a preview */ }
+    }
+
+    // Shrink a photo before uploading so it's fast and small.
+    function compressImage(file) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          const max = 1400;
+          let { width, height } = img;
+          if (width > max || height > max) {
+            if (width > height) { height = Math.round(height * max / width); width = max; }
+            else { width = Math.round(width * max / height); height = max; }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width; canvas.height = height;
+          canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+          canvas.toBlob(b => b ? resolve(b) : reject(new Error('compress failed')), 'image/jpeg', 0.7);
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image load failed')); };
+        img.src = url;
+      });
+    }
+
+    async function uploadReceipt(expenseId, file) {
+      if (!user) { alert('Log in to attach photos.'); return null; }
+      try {
+        const blob = await compressImage(file);
+        const path = `${user.id}/${expenseId}.jpg`;
+        const { error } = await db.storage.from('receipts')
+          .upload(path, blob, { upsert: true, contentType: 'image/jpeg' });
+        if (error) throw error;
+        return path;
+      } catch (e) {
+        console.warn('Receipt upload failed:', e);
+        alert('Sorry — the photo could not be uploaded (you may be offline). The expense was saved without it.');
+        return null;
+      }
+    }
+    async function deleteReceipt(path) {
+      try { await db.storage.from('receipts').remove([path]); }
+      catch (e) { console.warn('Receipt delete failed:', e); }
+    }
+
+    // View a saved receipt full-size.
+    async function viewReceipt(id) {
+      const e = cur().expenses.find(x => x.id === id);
+      if (!e || !e.receipt) return;
+      const viewer = document.getElementById('receipt-viewer');
+      document.getElementById('receipt-viewer-img').src = '';
+      document.getElementById('receipt-viewer-msg').textContent = 'Loading…';
+      viewer.style.display = 'flex';
+      try {
+        const { data, error } = await db.storage.from('receipts').createSignedUrl(e.receipt, 3600);
+        if (error) throw error;
+        document.getElementById('receipt-viewer-img').src = data.signedUrl;
+        document.getElementById('receipt-viewer-msg').textContent = '';
+      } catch (err) {
+        document.getElementById('receipt-viewer-msg').textContent = 'Could not load the receipt (are you offline?).';
+      }
+    }
+    function closeReceiptViewer() {
+      document.getElementById('receipt-viewer').style.display = 'none';
+      document.getElementById('receipt-viewer-img').src = '';
     }
 
     /* =========================================================
@@ -984,16 +1150,24 @@
       render();
     }
 
-    function exportCSV() {
+    async function exportCSV() {
       const grp = cur();
-      const rows = [['Date', 'Kind', 'Description', 'Amount', 'Paid by / From', 'Split / To']];
-      grp.expenses.slice().sort(byNewest).forEach(e => {
+      const rows = [['Date', 'Kind', 'Description', 'Amount', 'Paid by / From', 'Split / To', 'Receipt (link valid ~7 days)']];
+      const sorted = grp.expenses.slice().sort(byNewest);
+      for (const e of sorted) {
         const shares = sharesOf(e);
         const detail = Object.keys(shares).map(n => `${n}: ${money(shares[n])}`).join('; ');
-        rows.push([e.date || '', 'Expense', e.desc, e.amount.toFixed(2), e.payer, detail]);
-      });
+        let link = '';
+        if (e.receipt) {
+          try {
+            const { data } = await db.storage.from('receipts').createSignedUrl(e.receipt, 604800);
+            if (data) link = data.signedUrl;
+          } catch (_) { /* skip link if it can't be made */ }
+        }
+        rows.push([e.date || '', 'Expense', e.desc, e.amount.toFixed(2), e.payer, detail, link]);
+      }
       grp.payments.forEach(p => {
-        rows.push(['', 'Payment', `${p.from} paid ${p.to}`, p.amount.toFixed(2), p.from, p.to]);
+        rows.push(['', 'Payment', `${p.from} paid ${p.to}`, p.amount.toFixed(2), p.from, p.to, '']);
       });
       const csv = '﻿' + rows.map(r => r.map(csvCell).join(',')).join('\r\n');
       const safeName = grp.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
@@ -1099,6 +1273,7 @@
               </div>
               <div style="display:flex;align-items:center;gap:4px">
                 <span class="amount ${amtCls}">${money(e.amount)}</span>
+                ${e.receipt ? `<button class="icon-btn" onclick="viewReceipt(${e.id})">🧾</button>` : ''}
                 <button class="icon-btn" onclick="editExpense(${e.id})">✏️</button>
                 <button class="icon-btn" onclick="removeExpense(${e.id})">🗑️</button>
               </div>
