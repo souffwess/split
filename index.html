@@ -708,6 +708,14 @@
       render();
     }
 
+    // From the Home dashboard: switch to a group and open its Expenses tab.
+    function openGroupFromHome(id) {
+      currentId = id;
+      cancelEdit();
+      save();
+      showPage('expenses');
+    }
+
     /* =========================================================
        GROUPS
        ========================================================= */
@@ -1439,8 +1447,8 @@
         if (!g.people.includes(meName)) return; // you're not part of this group
         net += calculateBalances(g)[meName] || 0;
         calculateSettlements(g).forEach(s => {
-          if (s.to === meName)        owedRows.push({ name: s.from, group: g.name, amt: s.amt });
-          else if (s.from === meName) oweRows.push({ name: s.to,   group: g.name, amt: s.amt });
+          if (s.to === meName)        owedRows.push({ name: s.from, group: g.name, groupId: g.id, amt: s.amt });
+          else if (s.from === meName) oweRows.push({ name: s.to,   group: g.name, groupId: g.id, amt: s.amt });
         });
       });
       owedRows.sort((a, b) => b.amt - a.amt);
@@ -1452,9 +1460,12 @@
       else if (net < -0.005)      { netEl.textContent = 'You owe ' + money(-net); netEl.className = 'neg'; }
       else                        { netEl.textContent = "You're all settled up 🎉"; netEl.className = ''; }
 
-      const homeRow = (r, cls) => `<div class="row">
+      const homeRow = (r, cls) => `<div class="row" style="cursor:pointer" onclick="openGroupFromHome(${r.groupId})">
           <div><div class="title">${escapeHtml(r.name)}</div><div class="sub">📁 ${escapeHtml(r.group)}</div></div>
-          <span class="amount ${cls}">${money(r.amt)}</span>
+          <div style="display:flex; align-items:center; gap:6px">
+            <span class="amount ${cls}">${money(r.amt)}</span>
+            <span style="color:var(--muted)">›</span>
+          </div>
         </div>`;
       document.getElementById('home-owed').innerHTML = owedRows.length
         ? owedRows.map(r => homeRow(r, 'pos')).join('')
