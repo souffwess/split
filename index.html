@@ -557,6 +557,8 @@
     // burst of edits becomes one upload instead of many).
     function scheduleCloudSave() {
       if (!user) return;
+      pendingSync = true; // mark that we have a local change not yet in the cloud,
+                          // so syncNow() uploads it BEFORE pulling anything down
       clearTimeout(cloudTimer);
       cloudTimer = setTimeout(pushCloud, 700);
     }
