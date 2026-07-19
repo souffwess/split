@@ -87,7 +87,8 @@
       border: none;
       background: none;
       padding: 12px 2px;
-      font-size: 11px;
+      font-size: 10px;
+      line-height: 1.2;
       color: var(--muted);
       cursor: pointer;
     }
@@ -395,7 +396,7 @@
         <select id="meSelect" onchange="setMe(this.value)"></select>
       </div>
       <div class="card">
-        <h2>People in this group</h2>
+        <h2>Members of this group</h2>
         <div id="people-list"></div>
       </div>
     </section>
@@ -432,10 +433,10 @@
       <span class="icon">⚖️</span>Balances
     </button>
     <button id="tab-people" onclick="showPage('people')">
-      <span class="icon">👥</span>People
+      <span class="icon">👥</span>Members
     </button>
     <button id="tab-groups" onclick="showPage('groups')">
-      <span class="icon">📁</span>Groups
+      <span class="icon">📁</span>People/Groups
     </button>
   </nav>
 
