@@ -1505,15 +1505,21 @@
             const sh = sharesOf(e);
             const myNet = (e.payer === meName ? e.amount : 0) - (sh[meName] || 0);
             const amtCls = myNet > 0.005 ? 'pos' : myNet < -0.005 ? 'neg' : '';
+            // your actual position on this expense (not the gross total)
+            const netTxt = myNet > 0.005 ? `You're owed ${money(myNet)}`
+                         : myNet < -0.005 ? `You owe ${money(-myNet)}`
+                         : '';
+            const netLine = netTxt ? `<div class="${amtCls}" style="font-size:12px;font-weight:600;margin-top:2px">${netTxt}</div>` : '';
             return `
             <div class="row">
               <div>
                 <div class="title">${escapeHtml(e.desc)}${dateTag}</div>
                 <div class="sub">${escapeHtml(e.payer)} paid · ${how}</div>
                 ${e.note ? `<div class="sub" style="font-style:italic">📝 ${escapeHtml(e.note)}</div>` : ''}
+                ${netLine}
               </div>
               <div style="display:flex;align-items:center;gap:4px">
-                <span class="amount ${amtCls}">${money(e.amount)}</span>
+                <span class="amount">${money(e.amount)}</span>
                 ${e.receipt ? `<button class="icon-btn" onclick="viewReceipt(${e.id})">🧾</button>` : ''}
                 <button class="icon-btn" onclick="editExpense(${e.id})">✏️</button>
                 <button class="icon-btn" onclick="removeExpense(${e.id})">🗑️</button>
