@@ -111,7 +111,7 @@
 
     label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
 
-    input, select {
+    input, select, textarea {
       width: 100%;
       padding: 12px;
       font-size: 16px; /* 16px stops phones from zooming in when you tap a field */
@@ -120,6 +120,7 @@
       background: #fff;
       color: var(--text);
     }
+    textarea { font-family: inherit; resize: vertical; min-height: 44px; }
 
     button.primary {
       width: 100%;
@@ -326,11 +327,15 @@
           <option value="full">One person owes the full amount</option>
           <option value="custom">By exact amounts ($)</option>
           <option value="percent">By percentages (%)</option>
+          <option value="itemized">Restaurant — itemize &amp; split tax/tip</option>
         </select>
 
         <label id="participants-label">Split between (tap to include)</label>
         <div id="participants"></div>
         <div id="split-summary" class="split-summary"></div>
+
+        <label for="note">Note (optional)</label>
+        <textarea id="note" rows="2"></textarea>
 
         <label>Receipt photo (optional)</label>
         <input id="receipt-input-camera" type="file" accept="image/*" capture="environment" style="display:none" onchange="onReceiptPicked(this)" />
@@ -515,6 +520,9 @@
         sharedBy: e.sharedBy || [],          // used when splitType = 'equal'
         shares: e.shares || null,            // used when splitType = 'custom'  ({name: dollars})
         percents: e.percents || null,        // used when splitType = 'percent' ({name: percent})
+        subtotal: e.subtotal != null ? e.subtotal : null, // used when splitType = 'itemized'
+        items: e.items || null,              // used when splitType = 'itemized' ({name: items $})
+        note: e.note || '',                  // optional free-text note
         receipt: e.receipt || null           // storage path of the receipt photo, or null
       };
     }
@@ -847,6 +855,26 @@
         box.innerHTML = `<select id="fullPerson">` + people.map(p =>
           `<option value="${escapeAttr(p)}" ${p === chosen ? 'selected' : ''}>${escapeHtml(p)}</option>`
         ).join('') + `</select>`;
+      } else if (type === 'itemized') {
+        label.textContent = 'Each person’s items (before tax & tip)';
+        const items = preset && preset.items ? preset.items : {};
+        const sub = preset && preset.subtotal != null ? preset.subtotal : '';
+        box.className = '';
+        box.innerHTML =
+          `<div class="split-row">
+            <span class="name"><b>Subtotal</b> (before tax/tip)</span>
+            <span class="field"><span class="unit">$</span>
+              <input id="subtotalInput" type="number" inputmode="decimal" placeholder="0"
+                value="${sub !== '' && sub != null ? sub : ''}" oninput="updateSplitSummary()"></span>
+          </div>`
+          + people.map(p => `
+          <div class="split-row">
+            <span class="name">${escapeHtml(p)}</span>
+            <span class="field"><span class="unit">$</span>
+              <input type="number" inputmode="decimal" placeholder="0"
+                data-name="${escapeAttr(p)}" value="${items[p] != null ? items[p] : ''}"
+                oninput="updateSplitSummary()"></span>
+          </div>`).join('');
       } else {
         const isPercent = type === 'percent';
         label.textContent = isPercent ? 'Enter each person’s percentage' : 'Enter each person’s amount';
@@ -873,6 +901,21 @@
       const type = document.getElementById('splitType').value;
       if (type === 'equal' || type === 'full') { summary.textContent = ''; summary.className = 'split-summary'; return; }
 
+      if (type === 'itemized') {
+        const subEl = document.getElementById('subtotalInput');
+        const subtotal = subEl ? parseFloat(subEl.value) || 0 : 0;
+        let items = 0;
+        document.querySelectorAll('#participants input[data-name]').forEach(i => items += parseFloat(i.value) || 0);
+        const total = parseFloat(document.getElementById('amount').value) || 0;
+        const diff = Math.round((subtotal - items) * 100) / 100;
+        let msg = `Items ${money(items)} of subtotal ${money(subtotal)}`;
+        if (subtotal > 0) msg += (diff === 0 ? ' · ✓' : ` · ${money(Math.abs(diff))} ${diff > 0 ? 'left' : 'over'}`);
+        if (subtotal > 0 && total > 0) { const pct = Math.round((total / subtotal - 1) * 1000) / 10; msg += ` · tax & tip +${pct}%`; }
+        summary.textContent = msg;
+        summary.className = 'split-summary' + (subtotal > 0 && diff !== 0 ? ' bad' : '');
+        return;
+      }
+
       let assigned = 0;
       document.querySelectorAll('#participants input').forEach(i => assigned += parseFloat(i.value) || 0);
 
@@ -895,11 +938,12 @@
       const date = document.getElementById('date').value;
       const payer = document.getElementById('payer').value;
       const type = document.getElementById('splitType').value;
+      const note = document.getElementById('note').value.trim();
 
       if (!desc) { alert('Please add a description'); return null; }
       if (!amount || amount <= 0) { alert('Please enter a valid amount'); return null; }
 
-      let sharedBy = [], shares = null, percents = null;
+      let sharedBy = [], shares = null, percents = null, subtotal = null, items = null;
 
       if (type === 'equal') {
         sharedBy = [...document.querySelectorAll('#participants input:checked')].map(c => c.value);
@@ -921,7 +965,7 @@
           alert(`The amounts add up to ${money(sum)}, but the total is ${money(amount)}.\nPlease make them match.`);
           return null;
         }
-      } else { // percent
+      } else if (type === 'percent') {
         percents = {};
         document.querySelectorAll('#participants input').forEach(i => {
           const v = parseFloat(i.value); if (v > 0) percents[i.dataset.name] = v;
@@ -933,9 +977,24 @@
           alert(`The percentages add up to ${sum}%, but they need to total 100%.`);
           return null;
         }
+      } else { // itemized (restaurant): items → proportional share of the total (incl. tax & tip)
+        const subEl = document.getElementById('subtotalInput');
+        subtotal = subEl ? parseFloat(subEl.value) : NaN;
+        if (!subtotal || subtotal <= 0) { alert('Enter the subtotal (before tax & tip)'); return null; }
+        items = {};
+        document.querySelectorAll('#participants input[data-name]').forEach(i => {
+          const v = parseFloat(i.value); if (v > 0) items[i.dataset.name] = v;
+        });
+        sharedBy = Object.keys(items);
+        if (sharedBy.length === 0) { alert('Enter each person’s items'); return null; }
+        const sum = sharedBy.reduce((t, n) => t + items[n], 0);
+        if (Math.abs(sum - subtotal) > 0.01) {
+          alert(`Each person’s items add up to ${money(sum)}, but the subtotal is ${money(subtotal)}.\nPlease make them match.`);
+          return null;
+        }
       }
 
-      return { desc, amount, date, payer, splitType: type, sharedBy, shares, percents };
+      return { desc, amount, date, payer, note, splitType: type, sharedBy, shares, percents, subtotal, items };
     }
 
     async function saveExpense() {
@@ -980,7 +1039,8 @@
       document.getElementById('date').value = e.date || todayISO();
       document.getElementById('payer').value = e.payer;
       document.getElementById('splitType').value = e.splitType;
-      renderParticipants({ sharedBy: e.sharedBy, shares: e.shares, percents: e.percents });
+      renderParticipants({ sharedBy: e.sharedBy, shares: e.shares, percents: e.percents, items: e.items, subtotal: e.subtotal });
+      document.getElementById('note').value = e.note || '';
       // load any existing receipt photo into the form
       pendingReceiptFile = null;
       formReceiptPath = e.receipt || null;
@@ -1003,6 +1063,7 @@
       document.getElementById('splitType').value = 'equal';
       document.getElementById('form-title').textContent = 'Add an expense';
       document.getElementById('save-btn').textContent = 'Add expense';
+      document.getElementById('note').value = '';
       formPayer = meName; // a fresh expense defaults the payer to you
       pendingReceiptFile = null;
       formReceiptPath = null;
@@ -1141,6 +1202,12 @@
         for (const n in e.percents) out[n] = e.amount * e.percents[n] / 100;
         return out;
       }
+      if (e.splitType === 'itemized' && e.items && e.subtotal) {
+        // each person pays their items PLUS a proportional slice of tax & tip
+        const out = {};
+        for (const n in e.items) out[n] = e.items[n] / e.subtotal * e.amount;
+        return out;
+      }
       const each = e.amount / e.sharedBy.length; // equal split
       const out = {};
       e.sharedBy.forEach(p => out[p] = each);
@@ -1189,7 +1256,7 @@
     function markPaid(index) {
       const s = lastSettlements[index];
       if (!s) return;
-      cur().payments.push({ id: Date.now(), from: s.from, to: s.to, amount: s.amt });
+      cur().payments.push({ id: Date.now(), from: s.from, to: s.to, amount: s.amt, date: todayISO() });
       save();
       render();
     }
@@ -1197,6 +1264,13 @@
       cur().payments = cur().payments.filter(p => p.id !== id);
       save();
       render();
+    }
+    // Delete a payment from the expenses list (with a confirmation).
+    function deletePaymentFromList(id) {
+      const p = cur().payments.find(x => x.id === id);
+      if (!p) return;
+      if (!confirm(`Delete this payment?\n\n${p.from} → ${p.to} — ${money(p.amount)}\n\nThis can't be undone.`)) return;
+      undoPayment(id);
     }
 
     /* =========================================================
@@ -1213,7 +1287,7 @@
 
     async function exportCSV() {
       const grp = cur();
-      const rows = [['Date', 'Kind', 'Description', 'Amount', 'Paid by / From', 'Split / To', 'Receipt (link valid ~7 days)']];
+      const rows = [['Date', 'Kind', 'Description', 'Amount', 'Paid by / From', 'Split / To', 'Note', 'Receipt (link valid ~7 days)']];
       const sorted = grp.expenses.slice().sort(byNewest);
       for (const e of sorted) {
         const shares = sharesOf(e);
@@ -1225,10 +1299,10 @@
             if (data) link = data.signedUrl;
           } catch (_) { /* skip link if it can't be made */ }
         }
-        rows.push([e.date || '', 'Expense', e.desc, e.amount.toFixed(2), e.payer, detail, link]);
+        rows.push([e.date || '', 'Expense', e.desc, e.amount.toFixed(2), e.payer, detail, e.note || '', link]);
       }
       grp.payments.forEach(p => {
-        rows.push(['', 'Payment', `${p.from} paid ${p.to}`, p.amount.toFixed(2), p.from, p.to, '']);
+        rows.push([p.date || '', 'Payment', `${p.from} paid ${p.to}`, p.amount.toFixed(2), p.from, p.to, '', '']);
       });
       const csv = '﻿' + rows.map(r => r.map(csvCell).join(',')).join('\r\n');
       const safeName = grp.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
@@ -1267,15 +1341,17 @@
           <td class="num">${money(e.amount)}</td>
           <td>${escapeHtml(e.payer)}</td>
           <td>${detail}</td>
+          <td>${escapeHtml(e.note || '')}</td>
           <td>${receiptCell}</td>
         </tr>`);
       }
       const paymentRows = grp.payments.map(p => `<tr>
-          <td></td>
+          <td>${escapeHtml(p.date ? fmtDate(p.date) : '')}</td>
           <td>Payment: ${escapeHtml(p.from)} → ${escapeHtml(p.to)}</td>
           <td class="num">${money(p.amount)}</td>
           <td>${escapeHtml(p.from)}</td>
           <td>${escapeHtml(p.to)}</td>
+          <td></td>
           <td></td>
         </tr>`).join('');
 
@@ -1309,7 +1385,7 @@
   <p class="muted">Generated ${escapeHtml(fmtDate(todayISO()))}. Receipt links work for about 7 days — re-export anytime for fresh ones.</p>
   <h2>Expenses</h2>
   <table>
-    <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Paid by</th><th>Split</th><th>Receipt</th></tr></thead>
+    <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Paid by</th><th>Split</th><th>Note</th><th>Receipt</th></tr></thead>
     <tbody>${expenseRows.join('')}${paymentRows}</tbody>
   </table>
   <h2>Who owes whom</h2>
@@ -1390,15 +1466,36 @@
           </div>
         </div>`).join('');
 
-      // ---- expenses list (newest first) ----
+      // ---- expenses list (expenses + settle-up payments, newest first) ----
       const expList = document.getElementById('expense-list');
-      const sorted = cur().expenses.slice().sort(byNewest);
-      expList.innerHTML = sorted.length
-        ? sorted.map(e => {
+      const feed = [
+        ...cur().expenses.map(e => ({ kind: 'expense', item: e })),
+        ...cur().payments.map(p => ({ kind: 'payment', item: p }))
+      ].sort((a, b) => byNewest(a.item, b.item));
+
+      expList.innerHTML = feed.length
+        ? feed.map(entry => {
+            if (entry.kind === 'payment') {
+              const p = entry.item;
+              const dTag = p.date ? `<span class="tag">${fmtDate(p.date)}</span>` : '';
+              return `
+            <div class="row">
+              <div>
+                <div class="title">💵 Payment${dTag}</div>
+                <div class="sub">${escapeHtml(p.from)} → <b>${escapeHtml(p.to)}</b></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:4px">
+                <span class="amount" style="color:var(--muted)">${money(p.amount)}</span>
+                <button class="icon-btn" onclick="deletePaymentFromList(${p.id})">🗑️</button>
+              </div>
+            </div>`;
+            }
+            const e = entry.item;
             const ways = Object.keys(sharesOf(e)).length;
-            const how = e.splitType === 'full'    ? `${escapeHtml(e.sharedBy[0])} owes it all`
-                      : e.splitType === 'custom'  ? 'custom split'
-                      : e.splitType === 'percent' ? 'split by %'
+            const how = e.splitType === 'full'     ? `${escapeHtml(e.sharedBy[0])} owes it all`
+                      : e.splitType === 'custom'   ? 'custom split'
+                      : e.splitType === 'percent'  ? 'split by %'
+                      : e.splitType === 'itemized' ? 'itemized'
                       : `split ${ways} way${ways > 1 ? 's' : ''}`;
             const dateTag = e.date ? `<span class="tag">${fmtDate(e.date)}</span>` : '';
             // my position on this expense: what I paid minus my share.
@@ -1411,6 +1508,7 @@
               <div>
                 <div class="title">${escapeHtml(e.desc)}${dateTag}</div>
                 <div class="sub">${escapeHtml(e.payer)} paid · ${how}</div>
+                ${e.note ? `<div class="sub" style="font-style:italic">📝 ${escapeHtml(e.note)}</div>` : ''}
               </div>
               <div style="display:flex;align-items:center;gap:4px">
                 <span class="amount ${amtCls}">${money(e.amount)}</span>
