@@ -1163,7 +1163,8 @@
         return path;
       } catch (e) {
         console.warn('Receipt upload failed:', e);
-        alert('Sorry — the photo could not be uploaded (you may be offline). The expense was saved without it.');
+        const reason = (e && (e.message || e.error || e.name)) ? (e.message || e.error || e.name) : 'unknown error';
+        alert('Sorry — the photo could not be uploaded.\n\nReason: ' + reason + '\n\nThe expense was saved without it.');
         return null;
       }
     }
