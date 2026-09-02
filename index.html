@@ -662,7 +662,11 @@
       updateNetStatus();
       if (!user) return;
       if (pendingSync) await pushCloud();              // send offline edits up first
-      if (editingId === null && !document.hidden) {     // then refresh from the cloud
+      // Don't refresh while you're filling out the expense form (adding OR editing) —
+      // a refresh rebuilds the form and would wipe what you've typed (e.g. after
+      // leaving the app to take/choose a receipt photo).
+      const formOpen = document.getElementById('expense-form-card').style.display !== 'none';
+      if (!formOpen && !document.hidden) {              // then refresh from the cloud
         await pullCloud();
         render();
       }
