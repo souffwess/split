@@ -879,10 +879,11 @@
           <div class="split-row">
             <span class="name">${escapeHtml(p)}</span>
             <span class="field"><span class="unit">$</span>
-              <input type="number" inputmode="decimal" placeholder="0"
-                data-name="${escapeAttr(p)}" value="${items[p] != null ? items[p] : ''}"
+              <input type="text" placeholder="e.g. 5+3.04"
+                data-name="${escapeAttr(p)}" value="${escapeAttr(items[p] != null ? items[p] : '')}"
                 oninput="updateSplitSummary()"></span>
-          </div>`).join('');
+          </div>
+          <div class="hint item-eq" data-name="${escapeAttr(p)}" style="text-align:right;margin:-4px 0 6px"></div>`).join('');
       } else {
         const isPercent = type === 'percent';
         label.textContent = isPercent ? 'Enter each person’s percentage' : 'Enter each person’s amount';
@@ -911,9 +912,16 @@
 
       if (type === 'itemized') {
         const subEl = document.getElementById('subtotalInput');
-        const subtotal = subEl ? parseFloat(subEl.value) || 0 : 0;
+        const subtotal = subEl ? evalAmount(subEl.value) : 0;
         let items = 0;
-        document.querySelectorAll('#participants input[data-name]').forEach(i => items += parseFloat(i.value) || 0);
+        const inputs = document.querySelectorAll('#participants input[data-name]');
+        const eqs = document.querySelectorAll('#participants .item-eq');
+        inputs.forEach((i, idx) => {
+          const val = evalAmount(i.value);
+          items += val;
+          // show "= $X" only when they actually typed a sum (an operator)
+          if (eqs[idx]) eqs[idx].textContent = (i.value && /[+\-*/]/.test(i.value)) ? '= ' + money(val) : '';
+        });
         const total = parseFloat(document.getElementById('amount').value) || 0;
         const diff = Math.round((subtotal - items) * 100) / 100;
         let msg = `Items ${money(items)} of subtotal ${money(subtotal)}`;
@@ -987,15 +995,16 @@
         }
       } else { // itemized (restaurant): items → proportional share of the total (incl. tax & tip)
         const subEl = document.getElementById('subtotalInput');
-        subtotal = subEl ? parseFloat(subEl.value) : NaN;
+        subtotal = subEl ? evalAmount(subEl.value) : 0;
         if (!subtotal || subtotal <= 0) { alert('Enter the subtotal (before tax & tip)'); return null; }
         items = {};
         document.querySelectorAll('#participants input[data-name]').forEach(i => {
-          const v = parseFloat(i.value); if (v > 0) items[i.dataset.name] = v;
+          const raw = i.value.trim();
+          if (raw && evalAmount(raw) > 0) items[i.dataset.name] = raw; // keep the expression, e.g. "5+3.04"
         });
         sharedBy = Object.keys(items);
         if (sharedBy.length === 0) { alert('Enter each person’s items'); return null; }
-        const sum = sharedBy.reduce((t, n) => t + items[n], 0);
+        const sum = sharedBy.reduce((t, n) => t + evalAmount(items[n]), 0);
         if (Math.abs(sum - subtotal) > 0.01) {
           alert(`Each person’s items add up to ${money(sum)}, but the subtotal is ${money(subtotal)}.\nPlease make them match.`);
           return null;
@@ -1212,9 +1221,11 @@
         return out;
       }
       if (e.splitType === 'itemized' && e.items && e.subtotal) {
-        // each person pays their items PLUS a proportional slice of tax & tip
+        // each person pays their items PLUS a proportional slice of tax & tip.
+        // items may be expressions ("5+3.04") or plain numbers (older data).
         const out = {};
-        for (const n in e.items) out[n] = e.items[n] / e.subtotal * e.amount;
+        const sub = evalAmount(e.subtotal);
+        if (sub > 0) for (const n in e.items) out[n] = evalAmount(e.items[n]) / sub * e.amount;
         return out;
       }
       const each = e.amount / e.sharedBy.length; // equal split
@@ -1465,6 +1476,16 @@
        HELPERS
        ========================================================= */
     function money(n) { return '$' + (Math.round(n * 100) / 100).toFixed(2); }
+    // Evaluate a little math expression like "5+3.04+2" or "2*3.99" → a number.
+    // Strips everything except digits and + - * / ( ) so it can't run real code.
+    function evalAmount(v) {
+      const cleaned = String(v == null ? '' : v).replace(/[^0-9.+\-*/() ]/g, '');
+      if (!cleaned.trim()) return 0;
+      try {
+        const r = Function('"use strict";return(' + cleaned + ')')();
+        return (typeof r === 'number' && isFinite(r)) ? r : 0;
+      } catch (e) { return 0; }
+    }
     function escapeHtml(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
                       .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
