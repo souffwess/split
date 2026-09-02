@@ -1479,10 +1479,17 @@
     // Evaluate a little math expression like "5+3.04+2" or "2*3.99" → a number.
     // Strips everything except digits and + - * / ( ) so it can't run real code.
     function evalAmount(v) {
-      const cleaned = String(v == null ? '' : v).replace(/[^0-9.+\-*/() ]/g, '');
-      if (!cleaned.trim()) return 0;
+      let s = String(v == null ? '' : v).replace(/[^0-9.+\-*/() ]/g, '');
+      // Calculator-style: ignore a trailing operator / open paren / dot you haven't
+      // finished typing yet, and auto-close any open parentheses, so the running
+      // total keeps showing instead of dropping to $0 mid-entry.
+      s = s.replace(/[+\-*/.\s(]+$/, '');
+      const opens = (s.match(/\(/g) || []).length;
+      const closes = (s.match(/\)/g) || []).length;
+      if (opens > closes) s += ')'.repeat(opens - closes);
+      if (!s.trim()) return 0;
       try {
-        const r = Function('"use strict";return(' + cleaned + ')')();
+        const r = Function('"use strict";return(' + s + ')')();
         return (typeof r === 'number' && isFinite(r)) ? r : 0;
       } catch (e) { return 0; }
     }
