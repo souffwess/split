@@ -6,8 +6,8 @@
     1. <style>  ... how things LOOK
     2. <body>   ... what's on the SCREEN
     3. <script> ... how things WORK (the logic)
-  Your data is saved on YOUR phone using the browser's "localStorage".
-  Nothing is sent to the internet.
+  Your data is saved on YOUR phone using the browser's "localStorage" and
+  synced to your account in the cloud (Supabase) so every device matches.
 
   Data is organised into GROUPS (e.g. "Ski trip", "Roommates").
   Each group has its own people, expenses, and payments.
@@ -17,153 +17,376 @@
   <meta charset="UTF-8" />
   <!-- This line makes the app fit a phone screen properly -->
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <!-- The colour of the phone's status bar area (the light/dark toggle updates it) -->
   <meta name="theme-color" content="#0e7c5a" />
   <!-- These help it feel like a real app when added to the home screen -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Split" />
   <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="application-name" content="Split" />
+  <!-- The "manifest" tells the phone the app's name, icon and colours when it's installed.
+       Every path starts with ./ because the site lives under the /split/ folder. -->
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" type="image/svg+xml" href="./icons/icon.svg" />
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png" />
   <title>Split</title>
 
+  <!-- Apply the saved light/dark choice BEFORE anything draws, so there's no flash
+       of the wrong colours. (The toggle button's code is further down, in the main script.) -->
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('split_theme'); // "light", "dark", or nothing (= follow the phone)
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    })();
+  </script>
+
   <style>
-    /* ---- Colors & basic look, defined once so they're easy to change ---- */
+    /* =========================================================
+       DESIGN SYSTEM
+       All the colours, spacing and sizes live here as "variables"
+       (the --names). Change a value once and it updates everywhere.
+       Spacing follows an 8px grid: 4, 8, 12, 16, 24, 32.
+       ========================================================= */
     :root {
-      --green: #0e7c5a;
-      --green-dark: #0a5e44;
-      --bg: #f4f5f7;
-      --card: #ffffff;
-      --text: #1d2127;
-      --muted: #6b7280;
-      --red: #c0392b;
-      --line: #e5e7eb;
+      /* brand green (the one thing that never changes between themes) */
+      --brand: #0e7c5a;
+      --brand-dark: #0a5e44;
+      --brand-bright: #16a074;
+
+      /* LIGHT theme colours */
+      --bg: #f3f5f7;            /* page background */
+      --surface: #ffffff;       /* cards */
+      --surface-2: #f6f7f9;     /* inputs, inset areas */
+      --text: #171c22;
+      --muted: #667085;
+      --line: #e6e9ee;
+      --brand-soft: #e5f4ee;    /* light green tint for chips/highlights */
+      --brand-text: #0e7c5a;    /* green used for text on this background */
+      --pos: #128a63;           /* "you're owed" green */
+      --neg: #d43f2f;           /* "you owe" red */
+      --neg-soft: #fdecea;
+      --amber: #b45309;
+      --amber-soft: #fef3c7;
+      --header-a: #0e7c5a;      /* header gradient start */
+      --header-b: #13976d;      /* header gradient end */
+      --overlay: rgba(15, 20, 25, 0.45);
+      --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16, 24, 40, 0.06);
+      --shadow-md: 0 6px 16px rgba(16, 24, 40, 0.10), 0 2px 4px rgba(16, 24, 40, 0.06);
+      --shadow-lg: 0 18px 40px rgba(16, 24, 40, 0.20);
+      --focus: 0 0 0 3px rgba(14, 124, 90, 0.25);
+
+      /* sizes */
+      --radius-sm: 10px;
+      --radius: 14px;
+      --radius-lg: 20px;
+      --nav-h: 64px;            /* height of the bottom tab bar */
+
+      /* how fast things move */
+      --fast: 150ms;
+      --normal: 220ms;
+      --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+      color-scheme: light;
+    }
+
+    /* DARK theme — used when the phone is set to dark AND you haven't
+       picked "light" in the app, OR when you tap the moon button. */
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #0f1215;
+        --surface: #191d22;
+        --surface-2: #22272d;
+        --text: #e9ecef;
+        --muted: #98a2b3;
+        --line: #2b3239;
+        --brand-soft: rgba(22, 160, 116, 0.16);
+        --brand-text: #3ccf8e;
+        --pos: #3ccf8e;
+        --neg: #ff7a6b;
+        --neg-soft: rgba(255, 122, 107, 0.14);
+        --amber: #fbbf24;
+        --amber-soft: rgba(251, 191, 36, 0.14);
+        --header-a: #0b5b42;
+        --header-b: #0e7c5a;
+        --overlay: rgba(0, 0, 0, 0.6);
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+        --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.45);
+        --shadow-lg: 0 18px 40px rgba(0, 0, 0, 0.6);
+        --focus: 0 0 0 3px rgba(60, 207, 142, 0.3);
+        color-scheme: dark;
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg: #0f1215;
+      --surface: #191d22;
+      --surface-2: #22272d;
+      --text: #e9ecef;
+      --muted: #98a2b3;
+      --line: #2b3239;
+      --brand-soft: rgba(22, 160, 116, 0.16);
+      --brand-text: #3ccf8e;
+      --pos: #3ccf8e;
+      --neg: #ff7a6b;
+      --neg-soft: rgba(255, 122, 107, 0.14);
+      --amber: #fbbf24;
+      --amber-soft: rgba(251, 191, 36, 0.14);
+      --header-a: #0b5b42;
+      --header-b: #0e7c5a;
+      --overlay: rgba(0, 0, 0, 0.6);
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+      --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.45);
+      --shadow-lg: 0 18px 40px rgba(0, 0, 0, 0.6);
+      --focus: 0 0 0 3px rgba(60, 207, 142, 0.3);
+      color-scheme: dark;
+    }
+
+    /* ---- Motion: everything is quick and subtle. If the phone asks for
+       "reduce motion", we switch all animation off. ---- */
+    @keyframes fade-up   { from { opacity: 0; transform: translateY(8px); }  to { opacity: 1; transform: none; } }
+    @keyframes fade-in   { from { opacity: 0; }                              to { opacity: 1; } }
+    @keyframes expand    { from { opacity: 0; transform: translateY(-6px) scale(0.99); } to { opacity: 1; transform: none; } }
+    @keyframes collapse  { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-6px) scale(0.99); } }
+    @keyframes toast-in  { from { opacity: 0; transform: translateY(16px) scale(0.98); } to { opacity: 1; transform: none; } }
+    @keyframes toast-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(10px); } }
+    @keyframes sheet-up  { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+    @keyframes pop       { 0% { transform: scale(0.96); } 60% { transform: scale(1.03); } 100% { transform: none; } }
+    @keyframes row-out   { to { opacity: 0; transform: translateX(24px); max-height: 0; padding-top: 0; padding-bottom: 0; } }
+    @keyframes spin      { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
     }
 
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html { background: var(--bg); }
 
     body {
       margin: 0;
-      font-family: -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", system-ui, sans-serif;
+      font-size: 15px;
+      line-height: 1.45;
       background: var(--bg);
       color: var(--text);
-      /* leaves room so content isn't hidden behind phone notches/bars */
-      padding-bottom: 90px;
+      -webkit-font-smoothing: antialiased;
+      /* leaves room so content isn't hidden behind the tab bar / phone bars */
+      padding-bottom: calc(var(--nav-h) + 24px + env(safe-area-inset-bottom));
+      transition: background-color var(--normal) var(--ease), color var(--normal) var(--ease);
     }
 
     /* ---- The top bar ---- */
     header {
-      background: var(--green);
-      color: white;
-      padding: 14px 16px;
-      padding-top: max(14px, env(safe-area-inset-top));
+      background: linear-gradient(135deg, var(--header-a), var(--header-b));
+      color: #fff;
+      padding: 12px 16px 14px;
+      padding-top: max(12px, env(safe-area-inset-top));
       position: sticky;
       top: 0;
       z-index: 10;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
     }
-    header .titlebar { display: flex; align-items: center; gap: 10px; }
-    .offline-badge { font-size: 11px; background: #b45309; color: #fff; padding: 3px 9px; border-radius: 10px; }
-    header h1 { margin: 0; font-size: 20px; }
+    header .inner { max-width: 600px; margin: 0 auto; }
+    header .titlebar { display: flex; align-items: center; gap: 10px; min-height: 40px; }
+    header h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.2px; display: flex; align-items: center; gap: 8px; }
+    header h1 .logo { width: 28px; height: 28px; flex: none; }
+    .titlebar .spacer { flex: 1; }
+    .offline-badge {
+      font-size: 11px; font-weight: 600; letter-spacing: 0.2px;
+      background: var(--amber-soft); color: var(--amber);
+      padding: 4px 10px; border-radius: 999px;
+    }
+    /* the little sun/moon button */
+    .theme-btn {
+      width: 40px; height: 40px; border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.22);
+      background: rgba(255,255,255,0.12);
+      color: #fff; cursor: pointer; display: grid; place-items: center;
+      transition: background var(--fast) var(--ease), transform var(--fast) var(--ease);
+    }
+    .theme-btn:active { transform: scale(0.94); background: rgba(255,255,255,0.22); }
+    .theme-btn svg { width: 20px; height: 20px; }
+    /* only one of the two icons shows at a time */
+    .theme-btn .sun { display: none; }
+    :root[data-theme="dark"] .theme-btn .sun { display: block; }
+    :root[data-theme="dark"] .theme-btn .moon { display: none; }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) .theme-btn .sun { display: block; }
+      :root:not([data-theme="light"]) .theme-btn .moon { display: none; }
+    }
+
     /* the group picker lives in the header */
-    #groupSelect {
-      margin-top: 10px;
-      width: 100%;
-      background: rgba(255,255,255,0.15);
-      color: #fff;
-      border: 1px solid rgba(255,255,255,0.35);
-      border-radius: 8px;
-      padding: 8px 10px;
-      font-size: 14px;
+    .group-picker { position: relative; margin-top: 10px; }
+    .group-picker::after {
+      content: ''; position: absolute; right: 14px; top: 50%;
+      width: 8px; height: 8px; border-right: 2px solid rgba(255,255,255,0.85); border-bottom: 2px solid rgba(255,255,255,0.85);
+      transform: translateY(-70%) rotate(45deg); pointer-events: none;
     }
-    #groupSelect option { color: #000; }
+    #groupSelect {
+      margin: 0;
+      width: 100%;
+      appearance: none; -webkit-appearance: none;
+      background: rgba(255,255,255,0.14);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.28);
+      border-radius: 12px;
+      padding: 10px 36px 10px 14px;
+      font-size: 15px;
+      font-weight: 600;
+      min-height: 44px;
+      box-shadow: none;
+    }
+    #groupSelect:focus { outline: none; box-shadow: 0 0 0 3px rgba(255,255,255,0.25); }
+    #groupSelect option { color: #111; background: #fff; font-weight: 400; }
 
     /* ---- The tabs at the bottom ---- */
     nav {
       position: fixed;
       bottom: 0; left: 0; right: 0;
+      z-index: 20;
       display: flex;
-      background: var(--card);
+      justify-content: center;
+      background: color-mix(in srgb, var(--surface) 88%, transparent);
+      -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
       border-top: 1px solid var(--line);
       padding-bottom: env(safe-area-inset-bottom);
+      transition: background-color var(--normal) var(--ease);
     }
+    nav .inner { display: flex; width: 100%; max-width: 600px; }
     nav button {
       flex: 1;
       border: none;
       background: none;
-      padding: 12px 2px;
-      font-size: 10px;
+      height: var(--nav-h);
+      padding: 6px 2px 8px;
+      font-family: inherit;
+      font-size: 10.5px;
+      font-weight: 500;
+      letter-spacing: 0.1px;
       line-height: 1.2;
       color: var(--muted);
       cursor: pointer;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+      transition: color var(--fast) var(--ease), transform var(--fast) var(--ease);
     }
-    nav button.active { color: var(--green); font-weight: 600; }
-    nav button .icon { font-size: 20px; display: block; margin-bottom: 2px; }
+    nav button:active { transform: scale(0.94); }
+    nav button .icon {
+      display: grid; place-items: center;
+      width: 44px; height: 26px; border-radius: 999px;
+      transition: background var(--normal) var(--ease), color var(--fast) var(--ease);
+    }
+    nav button .icon svg { width: 22px; height: 22px; }
+    nav button.active { color: var(--brand-text); font-weight: 600; }
+    nav button.active .icon { background: var(--brand-soft); }
 
     /* ---- General layout ---- */
     main { padding: 16px; max-width: 600px; margin: 0 auto; }
     .page { display: none; }
-    .page.active { display: block; }
+    .page.active { display: block; animation: fade-up var(--normal) var(--ease) both; }
 
     .card {
-      background: var(--card);
-      border-radius: 14px;
+      background: var(--surface);
+      border-radius: var(--radius);
       padding: 16px;
       margin-bottom: 12px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--line);
+      transition: background-color var(--normal) var(--ease), border-color var(--normal) var(--ease);
     }
+    .card.hero { text-align: center; padding: 20px 16px; }
 
-    h2 { font-size: 16px; margin: 4px 0 12px; }
+    h2 { font-size: 15px; font-weight: 700; margin: 0 0 12px; letter-spacing: -0.1px; }
+    h2 .count { font-weight: 500; color: var(--muted); font-size: 13px; margin-left: 6px; }
 
-    label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+    label { display: block; font-size: 13px; font-weight: 500; color: var(--muted); margin: 14px 0 6px; }
+    label:first-of-type { margin-top: 4px; }
 
     input, select, textarea {
       width: 100%;
-      padding: 12px;
+      padding: 12px 14px;
+      min-height: 48px;
+      font-family: inherit;
       font-size: 16px; /* 16px stops phones from zooming in when you tap a field */
       border: 1px solid var(--line);
-      border-radius: 10px;
-      background: #fff;
+      border-radius: var(--radius-sm);
+      background: var(--surface-2);
       color: var(--text);
+      transition: border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease), background var(--normal) var(--ease);
     }
-    textarea { font-family: inherit; resize: vertical; min-height: 44px; }
+    input::placeholder, textarea::placeholder { color: var(--muted); opacity: 0.7; }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--brand); box-shadow: var(--focus); background: var(--surface); }
+    input[type="checkbox"] { min-height: 0; width: 18px; height: 18px; accent-color: var(--brand); margin: 0; }
+    textarea { resize: vertical; min-height: 56px; line-height: 1.4; }
+    select { appearance: none; -webkit-appearance: none; padding-right: 36px;
+      background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+      background-position: calc(100% - 18px) 55%, calc(100% - 13px) 55%;
+      background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
 
+    /* ---- Buttons ---- */
+    button { font-family: inherit; }
     button.primary {
       width: 100%;
-      background: var(--green);
-      color: white;
+      background: var(--brand);
+      color: #fff;
       border: none;
       padding: 14px;
+      min-height: 50px;
       font-size: 16px;
       font-weight: 600;
-      border-radius: 10px;
+      border-radius: 12px;
       margin-top: 16px;
       cursor: pointer;
+      box-shadow: 0 2px 8px rgba(14, 124, 90, 0.28);
+      transition: transform var(--fast) var(--ease), background var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
     }
-    button.primary:active { background: var(--green-dark); }
+    button.primary:active { background: var(--brand-dark); transform: scale(0.98); box-shadow: none; }
+    button.primary:disabled { opacity: 0.6; cursor: default; }
 
     /* a lighter, secondary button */
     button.ghost {
       width: 100%;
-      background: none;
-      color: var(--muted);
+      background: transparent;
+      color: var(--text);
       border: 1px solid var(--line);
       padding: 12px;
+      min-height: 46px;
       font-size: 14px;
-      border-radius: 10px;
+      font-weight: 500;
+      border-radius: 12px;
       margin-top: 8px;
       cursor: pointer;
+      transition: transform var(--fast) var(--ease), background var(--fast) var(--ease), border-color var(--fast) var(--ease);
     }
-    button.ghost.danger { color: var(--red); border-color: #f0c4be; }
+    button.ghost:active { transform: scale(0.98); background: var(--surface-2); }
+    button.ghost.danger { color: var(--neg); border-color: color-mix(in srgb, var(--neg) 35%, transparent); }
+    button.ghost.danger:active { background: var(--neg-soft); }
+    button.ghost:disabled { opacity: 0.6; cursor: default; }
 
     /* a small inline button */
     button.mini {
-      background: var(--green);
-      color: white;
+      background: var(--brand);
+      color: #fff;
       border: none;
-      padding: 7px 12px;
+      padding: 8px 14px;
+      min-height: 36px;
       font-size: 13px;
       font-weight: 600;
-      border-radius: 8px;
+      border-radius: 999px;
       cursor: pointer;
       white-space: nowrap;
+      transition: transform var(--fast) var(--ease), background var(--fast) var(--ease);
     }
-    button.mini.outline { background: none; color: var(--muted); border: 1px solid var(--line); }
+    button.mini:active { transform: scale(0.95); background: var(--brand-dark); }
+    button.mini.outline { background: transparent; color: var(--text); border: 1px solid var(--line); }
+    button.mini.outline:active { background: var(--surface-2); }
+
+    /* a plain text link-style button */
+    button.link {
+      background: none; border: none; color: var(--brand-text); font-size: 14px; font-weight: 600;
+      cursor: pointer; padding: 10px 4px; min-height: 44px;
+    }
+    button.link.muted { color: var(--muted); font-weight: 500; }
 
     /* ---- Lists ---- */
     .row {
@@ -172,26 +395,50 @@
       justify-content: space-between;
       padding: 12px 0;
       border-bottom: 1px solid var(--line);
-      gap: 10px;
+      gap: 12px;
+      transition: background var(--fast) var(--ease);
     }
     .row:last-child { border-bottom: none; }
-    .row .title { font-weight: 500; }
-    .row .sub { font-size: 12px; color: var(--muted); }
-    .row .amount { font-weight: 600; }
+    .row > div:first-child { min-width: 0; }
+    .row .title { font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
+    .row .sub { font-size: 12.5px; color: var(--muted); margin-top: 1px; }
+    .row .amount { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .row .actions { display: flex; align-items: center; gap: 2px; flex: none; }
+    .row.leaving { animation: row-out var(--normal) var(--ease) forwards; overflow: hidden; }
+    .row.tappable { cursor: pointer; }
+    .row.tappable:active { background: var(--surface-2); }
 
     .icon-btn {
       background: none; border: none; color: var(--muted);
-      font-size: 17px; cursor: pointer; padding: 4px 6px;
+      font-size: 16px; cursor: pointer; padding: 0;
+      width: 34px; height: 36px; border-radius: 10px;
+      display: inline-grid; place-items: center;
+      transition: background var(--fast) var(--ease), transform var(--fast) var(--ease), color var(--fast) var(--ease);
     }
+    .icon-btn svg { width: 19px; height: 19px; }
+    .icon-btn:active { background: var(--surface-2); transform: scale(0.9); color: var(--text); }
+    .icon-btn.danger:active { color: var(--neg); background: var(--neg-soft); }
+
+    /* the little round "initial" bubble next to a person's name */
+    .avatar {
+      width: 36px; height: 36px; border-radius: 50%; flex: none;
+      display: grid; place-items: center;
+      background: var(--brand-soft); color: var(--brand-text);
+      font-weight: 700; font-size: 14px; text-transform: uppercase;
+    }
+    .avatar.neg { background: var(--neg-soft); color: var(--neg); }
+    .person { display: flex; align-items: center; gap: 12px; min-width: 0; }
 
     /* the checkbox list for equal splits */
-    .people-checks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+    .people-checks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
     .people-checks label {
-      margin: 0;
-      display: flex; align-items: center; gap: 6px;
-      background: #fff; border: 1px solid var(--line);
-      padding: 8px 12px; border-radius: 20px; font-size: 14px; color: var(--text);
+      margin: 0; cursor: pointer;
+      display: flex; align-items: center; gap: 8px;
+      background: var(--surface-2); border: 1px solid var(--line);
+      padding: 9px 14px; min-height: 40px; border-radius: 999px; font-size: 14px; font-weight: 500; color: var(--text);
+      transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
     }
+    .people-checks label:has(input:checked) { background: var(--brand-soft); border-color: var(--brand); color: var(--brand-text); }
     .people-checks input { width: auto; }
 
     /* the per-person amount rows for custom / percentage splits */
@@ -200,75 +447,193 @@
       gap: 10px; padding: 6px 0;
     }
     .split-row span.name { flex: 1; font-size: 15px; }
-    .split-row .field { display: flex; align-items: center; gap: 4px; }
-    .split-row input { width: 110px; }
+    .split-row .field { display: flex; align-items: center; gap: 6px; }
+    .split-row input { width: 120px; min-height: 44px; padding: 10px 12px; }
     .split-row .unit { color: var(--muted); font-size: 14px; }
-    .split-summary { font-size: 13px; color: var(--muted); margin-top: 8px; }
-    .split-summary.bad { color: var(--red); }
+    .split-summary { font-size: 13px; color: var(--muted); margin-top: 8px; min-height: 18px; transition: color var(--fast) var(--ease); }
+    .split-summary.bad { color: var(--neg); }
 
     .tag {
-      display: inline-block; font-size: 11px; color: var(--muted);
-      background: var(--bg); border-radius: 6px; padding: 2px 7px; margin-left: 6px;
+      display: inline-block; font-size: 11px; font-weight: 500; color: var(--muted);
+      background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: 1px;
     }
-    .current-tag { color: var(--green); font-weight: 600; font-size: 12px; }
+    .current-tag { color: var(--brand-text); font-weight: 600; font-size: 12px; }
 
-    .empty { color: var(--muted); text-align: center; padding: 24px 0; font-size: 14px; }
-    .hint { font-size: 12px; color: var(--muted); margin: 0 0 4px; }
+    .empty { color: var(--muted); text-align: center; padding: 20px 8px; font-size: 14px; }
+    /* the friendlier empty states with a little drawing */
+    .empty-state { text-align: center; padding: 20px 12px 12px; color: var(--muted); animation: fade-in var(--normal) var(--ease) both; }
+    .empty-state svg { width: 96px; height: 96px; display: block; margin: 0 auto 10px; }
+    .empty-state .es-title { font-weight: 600; color: var(--text); font-size: 15px; margin-bottom: 2px; }
+    .empty-state .es-sub { font-size: 13px; }
+    .hint { font-size: 12.5px; color: var(--muted); margin: 0 0 4px; }
 
-    .settle b { color: var(--green); }
-    .pos { color: var(--green); }
-    .neg { color: var(--red); }
+    .settle b { color: var(--brand-text); }
+    .pos { color: var(--pos); }
+    .neg { color: var(--neg); }
+    .popped { animation: pop 350ms var(--ease); }
+
+    /* ---- Home dashboard ---- */
+    .home-hero .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: var(--muted); }
+    #home-net { font-size: 28px; line-height: 1.2; font-weight: 800; letter-spacing: -0.6px; margin-top: 4px; font-variant-numeric: tabular-nums; display: inline-block; }
+    .home-meter { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin: 14px 0 8px; display: flex; }
+    .home-meter .in  { background: var(--pos); transition: width 400ms var(--ease); }
+    .home-meter .out { background: var(--neg); transition: width 400ms var(--ease); }
+    .home-legend { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); }
+    .home-legend b { font-variant-numeric: tabular-nums; }
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 4px; }
+    .stat { background: var(--surface-2); border-radius: 12px; padding: 10px 8px; text-align: center; }
+    .stat .v { font-size: 17px; font-weight: 700; letter-spacing: -0.3px; font-variant-numeric: tabular-nums; }
+    .stat .k { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    /* the bar under each "who owes whom" row */
+    .bar { height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin-top: 6px; }
+    .bar > i { display: block; height: 100%; border-radius: 999px; background: var(--pos); transition: width 400ms var(--ease); }
+    .bar.neg > i { background: var(--neg); }
+    .chev { color: var(--muted); font-size: 18px; line-height: 1; }
+
+    /* ---- The expense form card opening/closing ---- */
+    #expense-form-card.opening { animation: expand var(--normal) var(--ease) both; }
+    #expense-form-card.closing { animation: collapse var(--fast) var(--ease) both; pointer-events: none; }
+    #new-expense-btn { display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .btn-row { display: flex; gap: 8px; }
+    .btn-row > button { flex: 1; }
 
     /* ---- The login screen (covers everything until you're signed in) ---- */
     #auth-screen {
       position: fixed; inset: 0; z-index: 1000;
-      background: var(--bg);
+      background:
+        radial-gradient(120% 70% at 50% -10%, color-mix(in srgb, var(--brand) 22%, transparent), transparent 60%),
+        var(--bg);
       display: flex; align-items: center; justify-content: center;
       padding: 20px;
+      padding-top: max(20px, env(safe-area-inset-top));
+      overflow: auto;
     }
     .auth-card {
-      background: var(--card); border-radius: 14px; padding: 24px;
-      width: 100%; max-width: 360px; box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      background: var(--surface); border-radius: var(--radius-lg); padding: 28px 24px 22px;
+      width: 100%; max-width: 380px; box-shadow: var(--shadow-md); border: 1px solid var(--line);
+      animation: sheet-up 320ms var(--ease) both;
     }
-    .auth-card h1 { margin: 0 0 6px; font-size: 26px; text-align: center; }
-    .auth-card .tagline { text-align: center; color: var(--muted); font-size: 13px; margin: 0 0 16px; }
-    #auth-msg { min-height: 18px; }
-    #auth-msg.bad { color: var(--red); }
+    .auth-logo { width: 68px; height: 68px; margin: 0 auto 12px; display: block; border-radius: 18px; box-shadow: 0 8px 22px rgba(14, 124, 90, 0.35); }
+    .auth-card h1 { margin: 0 0 4px; font-size: 26px; font-weight: 800; letter-spacing: -0.5px; text-align: center; }
+    .auth-card .tagline { text-align: center; color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+    #auth-msg { min-height: 20px; margin: 0 0 6px; }
+    #auth-msg.bad { color: var(--neg); }
     #auth-loading { text-align: center; color: var(--muted); padding: 20px 0; }
+    .auth-links { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+    .spinner { width: 22px; height: 22px; border: 3px solid var(--line); border-top-color: var(--brand); border-radius: 50%; margin: 0 auto 10px; animation: spin 800ms linear infinite; }
 
     /* ---- Receipt photos ---- */
     .receipt-thumb {
       display: block; max-width: 100%; max-height: 200px;
-      border-radius: 10px; border: 1px solid var(--line); margin-bottom: 8px;
+      border-radius: var(--radius-sm); border: 1px solid var(--line); margin-bottom: 8px;
     }
     #receipt-viewer {
       position: fixed; inset: 0; z-index: 1100;
-      background: rgba(0,0,0,0.85);
+      background: var(--overlay);
+      -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
       display: none; align-items: center; justify-content: center; padding: 16px;
+      animation: fade-in var(--fast) var(--ease) both;
     }
     .viewer-inner {
-      background: var(--card); border-radius: 14px; padding: 16px;
+      background: var(--surface); color: var(--text); border-radius: var(--radius-lg); padding: 16px;
       max-width: 100%; max-height: 100%; overflow: auto; text-align: center;
+      box-shadow: var(--shadow-lg); animation: sheet-up var(--normal) var(--ease) both;
     }
-    #receipt-viewer-img { max-width: 100%; max-height: 75vh; border-radius: 8px; }
+    #receipt-viewer-img { max-width: 100%; max-height: 75vh; border-radius: var(--radius-sm); }
+    #receipt-viewer-img[src=""] { display: none; }
+
+    /* ---- Toasts (little pop-up messages at the bottom) ---- */
+    #toast-host {
+      position: fixed; left: 0; right: 0;
+      bottom: calc(var(--nav-h) + 12px + env(safe-area-inset-bottom));
+      z-index: 1400; display: flex; flex-direction: column; align-items: center; gap: 8px;
+      padding: 0 16px; pointer-events: none;
+    }
+    .toast {
+      pointer-events: auto;
+      max-width: 420px; width: fit-content;
+      background: var(--text); color: var(--bg);
+      padding: 12px 16px; border-radius: 14px;
+      font-size: 14px; font-weight: 500; line-height: 1.4; white-space: pre-line;
+      box-shadow: var(--shadow-lg);
+      animation: toast-in var(--normal) var(--ease) both;
+      display: flex; align-items: flex-start; gap: 10px;
+    }
+    .toast.out { animation: toast-out var(--fast) var(--ease) forwards; }
+    .toast.ok    { border-left: 4px solid var(--pos); }
+    .toast.warn  { border-left: 4px solid var(--neg); }
+    .toast .t-icon { flex: none; font-size: 16px; line-height: 1.3; }
+
+    /* ---- The modal sheet (replaces the browser's confirm/prompt boxes) ---- */
+    #modal-host { position: fixed; inset: 0; z-index: 1300; display: none; }
+    #modal-host.open { display: flex; align-items: flex-end; justify-content: center; }
+    @media (min-width: 520px) { #modal-host.open { align-items: center; } }
+    .modal-backdrop { position: absolute; inset: 0; background: var(--overlay); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); animation: fade-in var(--fast) var(--ease) both; }
+    .sheet {
+      position: relative; width: 100%; max-width: 440px;
+      background: var(--surface); color: var(--text);
+      border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+      padding: 12px 20px calc(20px + env(safe-area-inset-bottom));
+      box-shadow: var(--shadow-lg);
+      animation: sheet-up var(--normal) var(--ease) both;
+    }
+    @media (min-width: 520px) { .sheet { border-radius: var(--radius-lg); padding-bottom: 20px; margin: 20px; } }
+    .sheet .grip { width: 40px; height: 4px; border-radius: 999px; background: var(--line); margin: 0 auto 14px; }
+    @media (min-width: 520px) { .sheet .grip { display: none; } }
+    .sheet h3 { margin: 4px 0 6px; font-size: 18px; font-weight: 700; letter-spacing: -0.2px; }
+    .sheet p { margin: 0 0 8px; color: var(--muted); font-size: 14.5px; white-space: pre-line; line-height: 1.5; }
+    .sheet .sheet-actions { display: flex; gap: 8px; margin-top: 16px; }
+    .sheet .sheet-actions button { margin: 0; flex: 1; }
+    .sheet button.primary.danger { background: var(--neg); box-shadow: 0 2px 8px rgba(212, 63, 47, 0.3); }
+    .sheet button.primary.danger:active { background: color-mix(in srgb, var(--neg) 80%, black); }
+    .sheet input { margin-top: 8px; }
+    .sheet .welcome-list { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 12px; }
+    .sheet .welcome-list li { display: flex; gap: 12px; align-items: flex-start; font-size: 14.5px; color: var(--text); }
+    .sheet .welcome-list .w-ico { width: 38px; height: 38px; flex: none; border-radius: 12px; background: var(--brand-soft); color: var(--brand-text); display: grid; place-items: center; font-size: 18px; }
+    .sheet .welcome-list small { display: block; color: var(--muted); font-size: 13px; }
   </style>
 </head>
 
 <body>
+  <!-- The app's logo, drawn once here and reused wherever you see <use href="#split-logo">.
+       (A receipt with a slice through it — "split the bill".) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="split-logo" viewBox="0 0 64 64">
+      <rect width="64" height="64" rx="14" fill="#0e7c5a"/>
+      <path d="M21 14h22a2 2 0 0 1 2 2v34l-4-3-4 3-4-3-4 3-4-3-4 3-2 1.5V16a2 2 0 0 1 2-2z" fill="#fff"/>
+      <path d="M26 23h12M26 30h12M26 37h8" stroke="#0e7c5a" stroke-width="2.6" stroke-linecap="round" opacity=".55"/>
+      <path d="M10 43L54 21" stroke="#0e7c5a" stroke-width="4.5" stroke-linecap="round"/>
+    </symbol>
+  </svg>
+
   <!-- Shown until you're logged in. Hidden once a session is active. -->
   <div id="auth-screen">
     <div class="auth-card">
-      <h1>💸 Split</h1>
-      <p class="tagline">Sign in to sync across your devices</p>
-      <div id="auth-loading">Loading…</div>
+      <svg class="auth-logo" aria-hidden="true"><use href="#split-logo"/></svg>
+      <h1>Split</h1>
+      <p class="tagline">Share costs with friends. Settle up without the awkwardness.</p>
+      <div id="auth-loading"><div class="spinner"></div>Loading…</div>
+
+      <!-- the normal log in / create account form -->
       <div id="auth-form" style="display:none">
         <p class="hint" id="auth-msg">Log in, or create an account the first time.</p>
         <label for="auth-email">Email</label>
-        <input id="auth-email" type="email" autocomplete="username" />
+        <input id="auth-email" type="email" autocomplete="username" placeholder="you@example.com" />
         <label for="auth-pass">Password</label>
-        <input id="auth-pass" type="password" autocomplete="current-password" />
+        <input id="auth-pass" type="password" autocomplete="current-password" placeholder="At least 6 characters" />
         <button class="primary" onclick="logIn()">Log in</button>
         <button class="ghost" onclick="signUp()">Create account</button>
+        <div class="auth-links">
+          <button class="link muted" onclick="forgotPassword()">Forgot password?</button>
+        </div>
+      </div>
+
+      <!-- shown after you tap the "reset password" link in your email -->
+      <div id="auth-reset-form" style="display:none">
+        <p class="hint" id="auth-reset-msg">Choose a new password for your account.</p>
+        <label for="auth-newpass">New password</label>
+        <input id="auth-newpass" type="password" autocomplete="new-password" placeholder="At least 6 characters" />
+        <button class="primary" onclick="setNewPassword()">Save new password</button>
       </div>
     </div>
   </div>
@@ -282,17 +647,41 @@
     </div>
   </div>
 
+  <!-- Little pop-up messages ("Saved!", "Please add a description") appear here. -->
+  <div id="toast-host" aria-live="polite"></div>
+
+  <!-- The in-app "Are you sure?" / "Rename…" sheet is built here when needed. -->
+  <div id="modal-host"></div>
+
   <header>
-    <div class="titlebar"><h1>💸 Split</h1><span id="offline-badge" class="offline-badge" style="display:none">Offline</span></div>
-    <select id="groupSelect" onchange="switchGroup(this.value)"></select>
+    <div class="inner">
+      <div class="titlebar">
+        <h1><svg class="logo" aria-hidden="true"><use href="#split-logo"/></svg>Split</h1>
+        <span id="offline-badge" class="offline-badge" style="display:none">Offline</span>
+        <span class="spacer"></span>
+        <button id="theme-btn" class="theme-btn" onclick="toggleTheme()" aria-label="Switch light/dark mode" title="Light / dark mode">
+          <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+          <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </button>
+      </div>
+      <div class="group-picker">
+        <select id="groupSelect" onchange="switchGroup(this.value)" aria-label="Current group"></select>
+      </div>
+    </div>
   </header>
 
   <main>
     <!-- ============ HOME / DASHBOARD ============ -->
     <section id="page-home" class="page active">
-      <div class="card" style="text-align:center">
-        <div class="hint">Across all your groups</div>
-        <div id="home-net" style="font-size:24px; font-weight:700; margin-top:4px;"></div>
+      <div class="card hero home-hero">
+        <div class="eyebrow">Across all your groups</div>
+        <div id="home-net"></div>
+        <!-- a bar showing how much is coming in (green) vs going out (red) -->
+        <div id="home-meter"></div>
+      </div>
+      <div class="card" id="home-month-card">
+        <h2>This month</h2>
+        <div id="home-month"></div>
       </div>
       <div class="card">
         <h2>You're owed</h2>
@@ -306,12 +695,15 @@
 
     <!-- ============ PAGE 1: EXPENSES ============ -->
     <section id="page-expenses" class="page">
-      <button id="new-expense-btn" class="primary" style="margin-top:0" onclick="openExpenseForm()">➕ New expense</button>
+      <button id="new-expense-btn" class="primary" style="margin-top:0" onclick="openExpenseForm()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        New expense
+      </button>
       <div class="card" id="expense-form-card" style="display:none">
         <h2 id="form-title">Add an expense</h2>
 
         <label for="desc">What was it for?</label>
-        <input id="desc" />
+        <input id="desc" placeholder="e.g. Dinner, Groceries, Gas" />
 
         <label for="amount">Amount</label>
         <input id="amount" type="number" inputmode="decimal" placeholder="0.00" oninput="updateSplitSummary()" />
@@ -336,14 +728,14 @@
         <div id="split-summary" class="split-summary"></div>
 
         <label for="note">Note (optional)</label>
-        <textarea id="note" rows="2"></textarea>
+        <textarea id="note" rows="2" placeholder="Anything worth remembering"></textarea>
 
         <label>Receipt photo (optional)</label>
         <input id="receipt-input-camera" type="file" accept="image/*" capture="environment" style="display:none" onchange="onReceiptPicked(this)" />
         <input id="receipt-input-gallery" type="file" accept="image/*" style="display:none" onchange="onReceiptPicked(this)" />
-        <div style="display:flex; gap:8px;">
-          <button type="button" class="ghost" style="flex:1" onclick="document.getElementById('receipt-input-camera').click()">📷 Take photo</button>
-          <button type="button" class="ghost" style="flex:1" onclick="document.getElementById('receipt-input-gallery').click()">🖼️ Choose photo</button>
+        <div class="btn-row">
+          <button type="button" class="ghost" onclick="document.getElementById('receipt-input-camera').click()">📷 Take photo</button>
+          <button type="button" class="ghost" onclick="document.getElementById('receipt-input-gallery').click()">🖼️ Choose photo</button>
         </div>
         <div id="receipt-preview" style="display:none; margin-top:8px;">
           <img id="receipt-thumb" class="receipt-thumb" alt="receipt preview" />
@@ -387,7 +779,7 @@
       <div class="card">
         <h2>Add a person</h2>
         <label for="personName">Name</label>
-        <input id="personName" />
+        <input id="personName" placeholder="e.g. Alex" />
         <button class="primary" onclick="addPerson()">Add person</button>
       </div>
       <div class="card">
@@ -424,21 +816,23 @@
   </main>
 
   <nav>
-    <button id="tab-home" class="active" onclick="showPage('home')">
-      <span class="icon">🏠</span>Home
-    </button>
-    <button id="tab-expenses" onclick="showPage('expenses')">
-      <span class="icon">🧾</span>Expenses
-    </button>
-    <button id="tab-balances" onclick="showPage('balances')">
-      <span class="icon">⚖️</span>Balances
-    </button>
-    <button id="tab-people" onclick="showPage('people')">
-      <span class="icon">👥</span>Members
-    </button>
-    <button id="tab-groups" onclick="showPage('groups')">
-      <span class="icon">📁</span>People/Groups
-    </button>
+    <div class="inner">
+      <button id="tab-home" class="active" onclick="showPage('home')">
+        <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8v9a2 2 0 0 1-2 2h-4v-6H9v6H5a2 2 0 0 1-2-2z"/></svg></span>Home
+      </button>
+      <button id="tab-expenses" onclick="showPage('expenses')">
+        <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg></span>Expenses
+      </button>
+      <button id="tab-balances" onclick="showPage('balances')">
+        <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M4 21h16M12 6l-6 3 M12 6l6 3"/><path d="M3 14l3-5 3 5a3 3 0 0 1-6 0zM15 14l3-5 3 5a3 3 0 0 1-6 0z"/></svg></span>Balances
+      </button>
+      <button id="tab-people" onclick="showPage('people')">
+        <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 15.5a5 5 0 0 1 5.5 4.5"/></svg></span>Members
+      </button>
+      <button id="tab-groups" onclick="showPage('groups')">
+        <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span>People/Groups
+      </button>
+    </div>
   </nav>
 
   <!-- Supabase library: handles the login + cloud database for us -->
@@ -466,7 +860,9 @@
 
     let groups = load('split_groups', null);
     let currentId = load('split_currentGroup', null);
-    let meName = load('split_meName', 'South'); // which person represents "you" (for the red/green coloring)
+    // Which person represents "you" (drives the red/green colouring and the Home tab).
+    // null = not chosen yet; on first run the app asks for your name (see firstRunSetup).
+    let meName = load('split_meName', null);
 
     // First run OR upgrading from the old single-group version:
     if (!groups) {
@@ -481,14 +877,18 @@
           payments: load('split_payments', [])
         }];
       } else {
-        groups = [{ id: Date.now(), name: 'My Group', people: ['South'], expenses: [], payments: [] }];
+        // A brand-new start: an empty group. Your name gets added once you tell us it
+        // (the app asks right after you log in for the first time).
+        groups = [{ id: Date.now(), name: 'My Group', people: [], expenses: [], payments: [] }];
       }
     }
     // make sure expenses always have the up-to-date shape
     groups.forEach(g => g.expenses = g.expenses.map(normalizeExpense));
 
-    // One-time rename of the original default person "Me" to "South".
-    // (Runs once, then remembers it's done so it never touches a future "Me".)
+    // One-time rename of the ORIGINAL default person "Me" to "South" — this only
+    // matters for data saved by the very first version of the app (before cloud sync).
+    // It runs once per device, then remembers it's done so it never touches a future "Me".
+    // (New accounts never have a "Me" person, so this does nothing for them.)
     if (!load('split_renamedMe', false)) {
       const ren = n => (n === 'Me' ? 'South' : n);
       groups.forEach(g => {
@@ -603,7 +1003,160 @@
     }
 
     /* =========================================================
-       LOGIN / SIGN-UP / LOG-OUT
+       LIGHT / DARK MODE
+       The colours themselves live in the <style> section as variables.
+       Here we just remember your choice (saved under "split_theme") and
+       stamp it on the page as data-theme="light" or "dark". No choice
+       saved = follow the phone's own setting.
+       ========================================================= */
+    function currentTheme() {
+      const forced = document.documentElement.getAttribute('data-theme');
+      if (forced) return forced;
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    function applyTheme(theme) {
+      if (theme) document.documentElement.setAttribute('data-theme', theme);
+      else document.documentElement.removeAttribute('data-theme');
+      // keep the phone's status-bar colour in step with the header
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', currentTheme() === 'dark' ? '#0b5b42' : '#0e7c5a');
+    }
+    function toggleTheme() {
+      const next = currentTheme() === 'dark' ? 'light' : 'dark';
+      applyTheme(next);
+      try { localStorage.setItem('split_theme', next); } catch (e) {}
+    }
+    applyTheme(document.documentElement.getAttribute('data-theme') || null); // sets the status-bar colour on load
+
+    /* =========================================================
+       TOASTS & SHEETS (our own pop-ups instead of the browser's boxes)
+       - toast("text")          → a small message that slides up, then fades
+       - await askConfirm({...}) → a bottom sheet with Cancel / Yes → true or false
+       - await askPrompt({...})  → a bottom sheet with a text box → the text, or null if cancelled
+       These replace alert(), confirm() and prompt(), which looked out of place
+       and caused focus glitches. "await" just means "wait for the answer".
+       ========================================================= */
+    function toast(message, kind) {           // kind: 'ok' (green tick), 'warn' (red), or nothing
+      const host = document.getElementById('toast-host');
+      if (!host) return;
+      const el = document.createElement('div');
+      el.className = 'toast' + (kind ? ' ' + kind : '');
+      const icon = kind === 'ok' ? '✓' : kind === 'warn' ? '!' : '';
+      if (icon) { const i = document.createElement('span'); i.className = 't-icon'; i.textContent = icon; el.appendChild(i); }
+      const txt = document.createElement('span'); txt.textContent = message; el.appendChild(txt);
+      host.appendChild(el);
+      while (host.children.length > 3) host.firstChild.remove(); // never stack up too many
+      const dismiss = () => { el.classList.add('out'); setTimeout(() => el.remove(), 180); };
+      const timer = setTimeout(dismiss, Math.min(7000, 2200 + message.length * 45)); // longer text stays longer
+      el.onclick = () => { clearTimeout(timer); dismiss(); };
+    }
+
+    let sheetResolve = null; // the "answer" function for the sheet that's currently open
+    // Draws a sheet. "resolver" is the function to call with the answer when it closes.
+    function openSheet(innerHtml, resolver) {
+      const host = document.getElementById('modal-host');
+      if (sheetResolve) closeSheet(null);   // only one sheet at a time: cancel any older one first
+      sheetResolve = resolver;
+      host.innerHTML =
+        `<div class="modal-backdrop" onclick="closeSheet(null)"></div>
+         <div class="sheet" role="dialog" aria-modal="true"><div class="grip"></div>${innerHtml}</div>`;
+      host.classList.add('open');
+    }
+    function closeSheet(result) {
+      const host = document.getElementById('modal-host');
+      host.classList.remove('open');
+      host.innerHTML = '';
+      const done = sheetResolve; sheetResolve = null;
+      if (done) done(result);
+    }
+    // Close the sheet with the Escape key, like a normal dialog.
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheetResolve) closeSheet(null); });
+
+    function askConfirm({ title, message = '', okText = 'Yes', cancelText = 'Cancel', danger = false }) {
+      return new Promise(resolve => {
+        openSheet(
+          `<h3>${escapeHtml(title)}</h3>${message ? `<p>${escapeHtml(message)}</p>` : ''}
+           <div class="sheet-actions">
+             <button class="ghost" onclick="closeSheet(false)">${escapeHtml(cancelText)}</button>
+             <button class="primary${danger ? ' danger' : ''}" onclick="closeSheet(true)">${escapeHtml(okText)}</button>
+           </div>`,
+          v => resolve(v === true));
+        const ok = document.querySelector('#modal-host .sheet-actions .primary');
+        if (ok) ok.focus();
+      });
+    }
+    function askPrompt({ title, message = '', value = '', placeholder = '', okText = 'Save', cancelText = 'Cancel' }) {
+      return new Promise(resolve => {
+        openSheet(
+          `<h3>${escapeHtml(title)}</h3>${message ? `<p>${escapeHtml(message)}</p>` : ''}
+           <input id="sheet-input" type="text" value="${escapeAttr(value)}" placeholder="${escapeAttr(placeholder)}" autocomplete="off" />
+           <div class="sheet-actions">
+             <button class="ghost" onclick="closeSheet(null)">${escapeHtml(cancelText)}</button>
+             <button class="primary" onclick="closeSheet(document.getElementById('sheet-input').value)">${escapeHtml(okText)}</button>
+           </div>`,
+          v => resolve(typeof v === 'string' ? v : null)); // null = cancelled, like prompt()
+        const input = document.getElementById('sheet-input');
+        input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); closeSheet(input.value); } });
+        setTimeout(() => { input.focus(); input.select(); }, 50);
+      });
+    }
+
+    // A short, friendly welcome the first time the app is opened on a device.
+    function showWelcome() {
+      return new Promise(resolve => {
+        openSheet(
+          `<h3>Welcome to Split 👋</h3>
+           <p>Keep track of shared costs and see who owes whom, without the awkward maths.</p>
+           <ul class="welcome-list">
+             <li><span class="w-ico">📁</span><div>Make a <b>group</b> for each trip or household<small>Each one keeps its own people and expenses.</small></div></li>
+             <li><span class="w-ico">🧾</span><div>Add <b>expenses</b> as they happen<small>Split equally, by amount, by %, or itemise a restaurant bill.</small></div></li>
+             <li><span class="w-ico">⚖️</span><div>Tap <b>Balances</b> to settle up<small>The fewest payments needed to get everyone even.</small></div></li>
+           </ul>
+           <div class="sheet-actions">
+             <button class="primary" onclick="closeSheet(true)">Let's go</button>
+           </div>`,
+          () => resolve(true));
+      });
+    }
+
+    // Makes sure we know your name. Asks for it if we don't, and (unless told not to)
+    // adds you to the current group. Returns true if we have a name afterwards.
+    async function ensureMeName(addToCurrentGroup = true) {
+      if (meName) return true;
+      const answer = await askPrompt({
+        title: "What's your name?",
+        message: "We'll use it to show what you're owed and what you owe.",
+        placeholder: 'e.g. Sam', okText: 'Continue'
+      });
+      const name = answer === null ? '' : answer.trim();
+      if (!name) return false;
+      meName = name;
+      if (addToCurrentGroup && cur() && !cur().people.includes(name)) cur().people.push(name);
+      save();
+      render();
+      return true;
+    }
+
+    // Runs right after login: welcome (once per device), then ask your name if needed.
+    async function firstRunSetup() {
+      if (!load('split_welcomeSeen', false)) {
+        await showWelcome();
+        try { localStorage.setItem('split_welcomeSeen', 'true'); } catch (e) {}
+      }
+      if (!meName) await ensureMeName();
+    }
+
+    // Fades a list row out before it disappears (returns a promise so callers can "await" it).
+    function animateOut(el) {
+      return new Promise(resolve => {
+        if (!el || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) return resolve();
+        el.classList.add('leaving');
+        setTimeout(resolve, 200);
+      });
+    }
+
+    /* =========================================================
+       LOGIN / SIGN-UP / LOG-OUT / FORGOT PASSWORD
        ========================================================= */
     function authMsg(text, bad) {
       const el = document.getElementById('auth-msg');
@@ -613,8 +1166,42 @@
     function showApp()  { document.getElementById('auth-screen').style.display = 'none'; }
     function showLogin() {
       document.getElementById('auth-loading').style.display = 'none';
+      document.getElementById('auth-reset-form').style.display = 'none';
       document.getElementById('auth-form').style.display = 'block';
       document.getElementById('auth-screen').style.display = 'flex';
+    }
+    // The "choose a new password" version of the login screen (after the email link).
+    function showResetForm() {
+      document.getElementById('auth-loading').style.display = 'none';
+      document.getElementById('auth-form').style.display = 'none';
+      document.getElementById('auth-reset-form').style.display = 'block';
+      document.getElementById('auth-screen').style.display = 'flex';
+    }
+
+    // "Forgot password?" — Supabase emails a link that brings you back here to set a new one.
+    async function forgotPassword() {
+      const email = document.getElementById('auth-email').value.trim();
+      if (!email) { authMsg('Type your email above first, then tap "Forgot password?".', true); return; }
+      authMsg('Sending reset email…');
+      const { error } = await db.auth.resetPasswordForEmail(email, {
+        redirectTo: location.origin + location.pathname   // come back to this app
+      });
+      if (error) { authMsg(error.message, true); return; }
+      authMsg('Check your email for a link to reset your password.');
+    }
+    // Called after you arrive from the email link and type a new password.
+    async function setNewPassword() {
+      const pass = document.getElementById('auth-newpass').value;
+      const msg = document.getElementById('auth-reset-msg');
+      if (pass.length < 6) { msg.textContent = 'Use at least 6 characters.'; msg.className = 'hint bad'; return; }
+      msg.textContent = 'Saving…'; msg.className = 'hint';
+      const { data, error } = await db.auth.updateUser({ password: pass });
+      if (error) { msg.textContent = error.message; msg.className = 'hint bad'; return; }
+      recoveryMode = false;
+      history.replaceState(null, '', location.pathname); // tidy the reset token out of the address bar
+      user = data.user;
+      toast('Password updated', 'ok');
+      await afterLogin();
     }
 
     async function logIn() {
@@ -645,6 +1232,7 @@
       await pullCloud();
       render();
       showApp();
+      await firstRunSetup(); // welcome + "what's your name?" (only when needed)
     }
 
     // Runs once when the app opens: shows the app if you're already
@@ -672,10 +1260,19 @@
       }
     }
 
+    // true while you're arriving from a "reset password" email link
+    let recoveryMode = /type=recovery/.test(location.hash);
     async function initAuth() {
+      // Supabase tells us when the page was opened from a password-reset link.
+      try {
+        db.auth.onAuthStateChange((event, session) => {
+          if (event === 'PASSWORD_RECOVERY') { recoveryMode = true; if (session) user = session.user; showResetForm(); }
+        });
+      } catch (e) { /* older library — the hash check above still covers it */ }
       try {
         const { data: { session } } = await db.auth.getSession();
-        if (session) { user = session.user; await pullCloud(); render(); showApp(); }
+        if (session && recoveryMode) { user = session.user; showResetForm(); }
+        else if (session) { user = session.user; await pullCloud(); render(); showApp(); await firstRunSetup(); }
         else { showLogin(); }
       } catch (e) { showLogin(); }
 
@@ -733,14 +1330,32 @@
       showPage('expenses');
     }
 
-    // The "New expense" form starts collapsed; these expand/collapse it.
+    // The "New expense" form starts collapsed; these expand/collapse it (with a
+    // quick animation). NOTE: syncNow() checks the card's style.display to know
+    // whether the form is open, so we always set that — the classes are just for looks.
+    let formHideTimer = null;
     function showExpenseForm() {
-      document.getElementById('expense-form-card').style.display = 'block';
+      clearTimeout(formHideTimer);
+      const card = document.getElementById('expense-form-card');
+      card.classList.remove('closing');
+      card.classList.remove('opening');
+      void card.offsetWidth;               // restart the animation if it just ran
+      card.style.display = 'block';
+      card.classList.add('opening');
       document.getElementById('new-expense-btn').style.display = 'none';
     }
     function hideExpenseForm() {
-      document.getElementById('expense-form-card').style.display = 'none';
-      document.getElementById('new-expense-btn').style.display = 'block';
+      const card = document.getElementById('expense-form-card');
+      document.getElementById('new-expense-btn').style.display = 'flex';
+      if (card.style.display === 'none') return;    // already hidden
+      const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      card.classList.remove('opening');
+      card.classList.add('closing');
+      clearTimeout(formHideTimer);
+      formHideTimer = setTimeout(() => {
+        card.style.display = 'none';
+        card.classList.remove('closing');
+      }, reduce ? 0 : 150);
     }
     function openExpenseForm() {
       resetForm();
@@ -751,17 +1366,21 @@
     /* =========================================================
        GROUPS
        ========================================================= */
-    function addGroup() {
+    async function addGroup() {
       const input = document.getElementById('groupName');
       const name = input.value.trim();
       if (!name) return;
-      const grp = { id: Date.now(), name, people: ['South'], expenses: [], payments: [] };
+      // If we don't know your name yet, ask now so you're a member of the new group.
+      // (false = don't also add you to the OLD current group.)
+      await ensureMeName(false);
+      const grp = { id: Date.now(), name, people: meName ? [meName] : [], expenses: [], payments: [] };
       groups.push(grp);
       currentId = grp.id;        // switch to the new group
       input.value = '';
       cancelEdit();
       save();
       showPage('expenses');      // jump into the fresh group
+      toast(`Group "${name}" created`, 'ok');
     }
 
     function switchGroup(id) {
@@ -771,20 +1390,26 @@
       render();
     }
 
-    function renameGroup(id) {
+    async function renameGroup(id) {
       const grp = groups.find(g => g.id === id);
-      const name = prompt('Rename group:', grp.name);
+      const name = await askPrompt({ title: 'Rename group', value: grp.name, okText: 'Rename' });
       if (name && name.trim()) { grp.name = name.trim(); save(); render(); }
     }
 
-    function deleteGroup(id) {
-      if (groups.length === 1) { alert("You can't delete your only group."); return; }
+    async function deleteGroup(id) {
+      if (groups.length === 1) { toast("You can't delete your only group.", 'warn'); return; }
       const grp = groups.find(g => g.id === id);
-      if (!confirm(`Delete the group "${grp.name}" and everything in it? This cannot be undone.`)) return;
+      const yes = await askConfirm({
+        title: `Delete "${grp.name}"?`,
+        message: 'The group and everything in it will be removed. This cannot be undone.',
+        okText: 'Delete', danger: true
+      });
+      if (!yes) return;
       groups = groups.filter(g => g.id !== id);
       if (currentId === id) currentId = groups[0].id;
       save();
       render();
+      toast('Group deleted');
     }
 
     /* =========================================================
@@ -794,21 +1419,23 @@
       const input = document.getElementById('personName');
       const name = input.value.trim();
       if (!name) return;
-      if (cur().people.includes(name)) { alert(name + ' is already on the list'); return; }
+      if (cur().people.includes(name)) { toast(name + ' is already on the list', 'warn'); return; }
       cur().people.push(name);
       input.value = '';
       save();
       render();
+      toast(name + ' added', 'ok');
     }
 
-    function renamePerson(index) {
-      const people = cur().people;
-      const oldName = people[index];
-      const input = prompt('Rename person:', oldName);
+    async function renamePerson(index) {
+      const oldName = cur().people[index];
+      const input = await askPrompt({ title: 'Rename person', value: oldName, okText: 'Rename' });
       if (input === null) return;                 // cancelled
       const newName = input.trim();
       if (!newName || newName === oldName) return; // nothing to do
-      if (people.includes(newName)) { alert(newName + ' is already in this group.'); return; }
+      const people = cur().people;
+      if (people[index] !== oldName) return;       // the list changed while the sheet was open — do nothing
+      if (people.includes(newName)) { toast(newName + ' is already in this group.', 'warn'); return; }
 
       // swap the old name for the new one everywhere in this group
       const ren = n => (n === oldName ? newName : n);
@@ -831,7 +1458,7 @@
       const inExpense = cur().expenses.some(e => e.payer === name || sharesOf(e)[name] !== undefined);
       const inPayment = cur().payments.some(p => p.from === name || p.to === name);
       if (inExpense || inPayment) {
-        alert("Can't remove " + name + " — they're part of an expense or payment.");
+        toast("Can't remove " + name + " — they're part of an expense or payment.", 'warn');
         return;
       }
       cur().people.splice(index, 1);
@@ -956,18 +1583,18 @@
       const type = document.getElementById('splitType').value;
       const note = document.getElementById('note').value.trim();
 
-      if (!desc) { alert('Please add a description'); return null; }
-      if (!amount || amount <= 0) { alert('Please enter a valid amount'); return null; }
+      if (!desc) { toast('Please add a description', 'warn'); return null; }
+      if (!amount || amount <= 0) { toast('Please enter a valid amount', 'warn'); return null; }
 
       let sharedBy = [], shares = null, percents = null, subtotal = null, items = null;
 
       if (type === 'equal') {
         sharedBy = [...document.querySelectorAll('#participants input:checked')].map(c => c.value);
-        if (sharedBy.length === 0) { alert('Pick at least one person to split between'); return null; }
+        if (sharedBy.length === 0) { toast('Pick at least one person to split between', 'warn'); return null; }
       } else if (type === 'full') {
         const sel = document.getElementById('fullPerson');
         const person = sel ? sel.value : '';
-        if (!person) { alert('Pick who owes the full amount'); return null; }
+        if (!person) { toast('Pick who owes the full amount', 'warn'); return null; }
         sharedBy = [person];
       } else if (type === 'custom') {
         shares = {};
@@ -975,10 +1602,10 @@
           const v = parseFloat(i.value); if (v > 0) shares[i.dataset.name] = v;
         });
         sharedBy = Object.keys(shares);
-        if (sharedBy.length === 0) { alert('Enter an amount for at least one person'); return null; }
+        if (sharedBy.length === 0) { toast('Enter an amount for at least one person', 'warn'); return null; }
         const sum = sharedBy.reduce((t, n) => t + shares[n], 0);
         if (Math.abs(sum - amount) > 0.01) {
-          alert(`The amounts add up to ${money(sum)}, but the total is ${money(amount)}.\nPlease make them match.`);
+          toast(`The amounts add up to ${money(sum)}, but the total is ${money(amount)}.\nPlease make them match.`, 'warn');
           return null;
         }
       } else if (type === 'percent') {
@@ -987,26 +1614,26 @@
           const v = parseFloat(i.value); if (v > 0) percents[i.dataset.name] = v;
         });
         sharedBy = Object.keys(percents);
-        if (sharedBy.length === 0) { alert('Enter a percentage for at least one person'); return null; }
+        if (sharedBy.length === 0) { toast('Enter a percentage for at least one person', 'warn'); return null; }
         const sum = sharedBy.reduce((t, n) => t + percents[n], 0);
         if (Math.abs(sum - 100) > 0.1) {
-          alert(`The percentages add up to ${sum}%, but they need to total 100%.`);
+          toast(`The percentages add up to ${sum}%, but they need to total 100%.`, 'warn');
           return null;
         }
       } else { // itemized (restaurant): items → proportional share of the total (incl. tax & tip)
         const subEl = document.getElementById('subtotalInput');
         subtotal = subEl ? evalAmount(subEl.value) : 0;
-        if (!subtotal || subtotal <= 0) { alert('Enter the subtotal (before tax & tip)'); return null; }
+        if (!subtotal || subtotal <= 0) { toast('Enter the subtotal (before tax & tip)', 'warn'); return null; }
         items = {};
         document.querySelectorAll('#participants input[data-name]').forEach(i => {
           const raw = i.value.trim();
           if (raw && evalAmount(raw) > 0) items[i.dataset.name] = raw; // keep the expression, e.g. "5+3.04"
         });
         sharedBy = Object.keys(items);
-        if (sharedBy.length === 0) { alert('Enter each person’s items'); return null; }
+        if (sharedBy.length === 0) { toast('Enter each person’s items', 'warn'); return null; }
         const sum = sharedBy.reduce((t, n) => t + evalAmount(items[n]), 0);
         if (Math.abs(sum - subtotal) > 0.01) {
-          alert(`Each person’s items add up to ${money(sum)}, but the subtotal is ${money(subtotal)}.\nPlease make them match.`);
+          toast(`Each person’s items add up to ${money(sum)}, but the subtotal is ${money(subtotal)}.\nPlease make them match.`, 'warn');
           return null;
         }
       }
@@ -1033,6 +1660,7 @@
       }
       data.receipt = receiptPath || null;
 
+      const wasEditing = editingId !== null;
       if (editingId !== null) {
         const idx = cur().expenses.findIndex(e => e.id === editingId);
         if (idx !== -1) cur().expenses[idx] = { id, ...data };
@@ -1044,6 +1672,7 @@
       resetForm();
       hideExpenseForm();
       render();
+      toast(wasEditing ? 'Changes saved' : 'Expense added', 'ok');
     }
 
     function editExpense(id) {
@@ -1092,12 +1721,19 @@
     async function removeExpense(id) {
       const e = cur().expenses.find(x => x.id === id);
       if (!e) return;
-      if (!confirm(`Delete this expense?\n\n${e.desc} — ${money(e.amount)}\n\nThis can't be undone.`)) return;
+      const yes = await askConfirm({
+        title: 'Delete this expense?',
+        message: `${e.desc} — ${money(e.amount)}\n\nThis can't be undone.`,
+        okText: 'Delete', danger: true
+      });
+      if (!yes) return;
       if (editingId === id) cancelEdit();
+      await animateOut(document.querySelector(`#expense-list .row[data-id="e${id}"]`)); // slide the row away
       if (e.receipt) await deleteReceipt(e.receipt);
       cur().expenses = cur().expenses.filter(x => x.id !== id);
       save();
       render();
+      toast('Expense deleted');
     }
 
     /* =========================================================
@@ -1167,7 +1803,7 @@
     }
 
     async function uploadReceipt(expenseId, file) {
-      if (!user) { alert('Log in to attach photos.'); return null; }
+      if (!user) { toast('Log in to attach photos.', 'warn'); return null; }
       try {
         const blob = await compressImage(file);
         const path = `${user.id}/${expenseId}.jpg`;
@@ -1178,7 +1814,7 @@
       } catch (e) {
         console.warn('Receipt upload failed:', e);
         const reason = (e && (e.message || e.error || e.name)) ? (e.message || e.error || e.name) : 'unknown error';
-        alert('Sorry — the photo could not be uploaded.\n\nReason: ' + reason + '\n\nThe expense was saved without it.');
+        toast('Sorry — the photo could not be uploaded.\nReason: ' + reason + '\nThe expense was saved without it.', 'warn');
         return null;
       }
     }
@@ -1286,23 +1922,36 @@
       render();
     }
     // Delete a payment from the expenses list (with a confirmation).
-    function deletePaymentFromList(id) {
+    async function deletePaymentFromList(id) {
       const p = cur().payments.find(x => x.id === id);
       if (!p) return;
-      if (!confirm(`Delete this payment?\n\n${p.from} → ${p.to} — ${money(p.amount)}\n\nThis can't be undone.`)) return;
+      const yes = await askConfirm({
+        title: 'Delete this payment?',
+        message: `${p.from} → ${p.to} — ${money(p.amount)}\n\nThis can't be undone.`,
+        okText: 'Delete', danger: true
+      });
+      if (!yes) return;
+      await animateOut(document.querySelector(`#expense-list .row[data-id="p${id}"]`)); // slide the row away
       undoPayment(id);
+      toast('Payment deleted');
     }
 
     /* =========================================================
        RESET & EXPORT
        ========================================================= */
-    function resetGroup() {
-      if (!confirm(`Clear ALL expenses and payments in "${cur().name}"?\nThe people stay. This cannot be undone.`)) return;
+    async function resetGroup() {
+      const yes = await askConfirm({
+        title: `Clear "${cur().name}"?`,
+        message: 'ALL expenses and payments in this group will be removed. The people stay. This cannot be undone.',
+        okText: 'Clear everything', danger: true
+      });
+      if (!yes) return;
       cur().expenses = [];
       cur().payments = [];
       cancelEdit();
       save();
       render();
+      toast('Group cleared');
     }
 
     async function exportCSV() {
@@ -1354,10 +2003,10 @@
 
     // Download EVERY receipt photo across ALL groups into one zip, as a local backup.
     async function downloadAllReceipts() {
-      if (!user) { alert('Log in first.'); return; }
+      if (!user) { toast('Log in first.', 'warn'); return; }
       const targets = [];
       groups.forEach(g => g.expenses.forEach(e => { if (e.receipt) targets.push({ g, e }); }));
-      if (targets.length === 0) { alert('No receipts to back up yet.'); return; }
+      if (targets.length === 0) { toast('No receipts to back up yet.'); return; }
 
       const btn = document.getElementById('download-receipts-btn');
       const label = btn.textContent;
@@ -1377,7 +2026,7 @@
             done++;
           } catch (err) { console.warn('Receipt download failed:', e.receipt, err); failed++; }
         }
-        if (done === 0) { alert('Sorry — none of the receipts could be downloaded.'); return; }
+        if (done === 0) { toast('Sorry — none of the receipts could be downloaded.', 'warn'); return; }
         btn.textContent = 'Zipping…';
         const blob = await zip.generateAsync({ type: 'blob' });
         const url = URL.createObjectURL(blob);
@@ -1385,9 +2034,9 @@
         a.href = url; a.download = `split-receipts-${todayISO()}.zip`;
         document.body.appendChild(a); a.click(); a.remove();
         URL.revokeObjectURL(url);
-        alert(`Saved ${done} receipt${done === 1 ? '' : 's'} to a zip${failed ? ` (${failed} could not be downloaded)` : ''}.`);
+        toast(`Saved ${done} receipt${done === 1 ? '' : 's'} to a zip${failed ? ` (${failed} could not be downloaded)` : ''}.`, 'ok');
       } catch (err) {
-        alert('Could not create the backup: ' + (err.message || err));
+        toast('Could not create the backup: ' + (err.message || err), 'warn');
       } finally {
         btn.disabled = false;
         btn.textContent = label;
@@ -1498,6 +2147,50 @@
                       .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     }
     function escapeAttr(s) { return escapeHtml(s); }
+
+    // Small line-drawn icons for the list buttons (edit / delete / receipt).
+    function icon(name) {
+      const d = {
+        edit:    '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+        trash:   '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>',
+        receipt: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>'
+      }[name] || '';
+      return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+    }
+
+    // The little round bubble with a person's initial (used in lists).
+    function avatar(name, cls) {
+      const initial = String(name || '?').trim().charAt(0) || '?';
+      return `<span class="avatar${cls ? ' ' + cls : ''}">${escapeHtml(initial)}</span>`;
+    }
+
+    // A friendly "nothing here yet" block with a small drawing.
+    // kind: 'receipt' | 'check' | 'wallet' | 'people'
+    function emptyState(kind, title, sub) {
+      const stroke = 'stroke="var(--brand-text)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"';
+      const art = {
+        receipt: `<circle cx="48" cy="48" r="40" fill="var(--brand-soft)"/>
+                  <path d="M34 26h28a2 2 0 0 1 2 2v42l-5-3.5-5 3.5-5-3.5-5 3.5-5-3.5-5 3.5V28a2 2 0 0 1 2-2z" fill="var(--surface)" ${stroke}/>
+                  <path d="M40 38h16M40 46h16M40 54h9" ${stroke}/>`,
+        check:   `<circle cx="48" cy="48" r="40" fill="var(--brand-soft)"/>
+                  <circle cx="48" cy="48" r="22" fill="var(--surface)" ${stroke}/>
+                  <path d="M38 48l7 7 13-14" ${stroke} stroke-width="3.5"/>`,
+        wallet:  `<circle cx="48" cy="48" r="40" fill="var(--brand-soft)"/>
+                  <rect x="26" y="34" width="44" height="30" rx="6" fill="var(--surface)" ${stroke}/>
+                  <path d="M26 42h44" ${stroke}/>
+                  <rect x="54" y="46" width="16" height="10" rx="3" fill="var(--brand-soft)" ${stroke}/>`,
+        people:  `<circle cx="48" cy="48" r="40" fill="var(--brand-soft)"/>
+                  <circle cx="40" cy="40" r="8" fill="var(--surface)" ${stroke}/>
+                  <path d="M24 66a16 16 0 0 1 32 0" fill="var(--surface)" ${stroke}/>
+                  <circle cx="60" cy="42" r="6" fill="var(--surface)" ${stroke}/>
+                  <path d="M58 56a12 12 0 0 1 14 10" ${stroke}/>`
+      }[kind] || '';
+      return `<div class="empty-state">
+        <svg viewBox="0 0 96 96" aria-hidden="true">${art}</svg>
+        <div class="es-title">${escapeHtml(title)}</div>
+        ${sub ? `<div class="es-sub">${escapeHtml(sub)}</div>` : ''}
+      </div>`;
+    }
     // sort newest first; expenses without a date go to the bottom
     function byNewest(a, b) {
       const da = a.date || '', db = b.date || '';
@@ -1535,25 +2228,27 @@
       document.getElementById('people-list').innerHTML = people.length
         ? people.map((p, idx) => `
             <div class="row">
-              <span class="title">${escapeHtml(p)}</span>
-              <div style="display:flex;align-items:center;gap:4px">
-                <button class="icon-btn" onclick="renamePerson(${idx})">✏️</button>
-                <button class="icon-btn" onclick="removePerson(${idx})">🗑️</button>
+              <div class="person">${avatar(p)}
+                <div><div class="title">${escapeHtml(p)}</div>${p === meName ? '<div class="sub">That’s you</div>' : ''}</div>
+              </div>
+              <div class="actions">
+                <button class="icon-btn" onclick="renamePerson(${idx})" aria-label="Rename">${icon('edit')}</button>
+                <button class="icon-btn danger" onclick="removePerson(${idx})" aria-label="Remove">${icon('trash')}</button>
               </div>
             </div>`).join('')
-        : '<div class="empty">No people yet</div>';
+        : emptyState('people', 'No members yet', 'Add the people you share costs with.');
 
       // ---- groups list ----
       document.getElementById('groups-list').innerHTML = groups.map(g => `
         <div class="row">
           <div>
             <div class="title">📁 ${escapeHtml(g.name)} ${g.id === currentId ? '<span class="current-tag">· current</span>' : ''}</div>
-            <div class="sub">${g.people.length} people · ${g.expenses.length} expense${g.expenses.length === 1 ? '' : 's'}</div>
+            <div class="sub">${g.people.length} ${g.people.length === 1 ? 'person' : 'people'} · ${g.expenses.length} expense${g.expenses.length === 1 ? '' : 's'}</div>
           </div>
-          <div style="display:flex;align-items:center;gap:4px">
+          <div class="actions">
             ${g.id === currentId ? '' : `<button class="mini outline" onclick="switchGroup(${g.id})">Open</button>`}
-            <button class="icon-btn" onclick="renameGroup(${g.id})">✏️</button>
-            <button class="icon-btn" onclick="deleteGroup(${g.id})">🗑️</button>
+            <button class="icon-btn" onclick="renameGroup(${g.id})" aria-label="Rename">${icon('edit')}</button>
+            <button class="icon-btn danger" onclick="deleteGroup(${g.id})" aria-label="Delete">${icon('trash')}</button>
           </div>
         </div>`).join('');
 
@@ -1570,14 +2265,14 @@
               const p = entry.item;
               const dTag = p.date ? `<span class="tag">${fmtDate(p.date)}</span>` : '';
               return `
-            <div class="row">
+            <div class="row" data-id="p${p.id}">
               <div>
                 <div class="title">💵 Payment${dTag}</div>
                 <div class="sub">${escapeHtml(p.from)} → <b>${escapeHtml(p.to)}</b></div>
               </div>
-              <div style="display:flex;align-items:center;gap:4px">
+              <div class="actions">
                 <span class="amount" style="color:var(--muted)">${money(p.amount)}</span>
-                <button class="icon-btn" onclick="deletePaymentFromList(${p.id})">🗑️</button>
+                <button class="icon-btn danger" onclick="deletePaymentFromList(${p.id})" aria-label="Delete payment">${icon('trash')}</button>
               </div>
             </div>`;
             }
@@ -1600,42 +2295,47 @@
                          : '';
             const netLine = netTxt ? `<div class="${amtCls}" style="font-size:12px;font-weight:600;margin-top:2px">${netTxt}</div>` : '';
             return `
-            <div class="row">
+            <div class="row" data-id="e${e.id}">
               <div>
                 <div class="title">${escapeHtml(e.desc)}${dateTag}</div>
                 <div class="sub">${escapeHtml(e.payer)} paid · ${how}</div>
                 ${e.note ? `<div class="sub" style="font-style:italic">📝 ${escapeHtml(e.note)}</div>` : ''}
                 ${netLine}
               </div>
-              <div style="display:flex;align-items:center;gap:4px">
+              <div class="actions">
                 <span class="amount">${money(e.amount)}</span>
-                ${e.receipt ? `<button class="icon-btn" onclick="viewReceipt(${e.id})">🧾</button>` : ''}
-                <button class="icon-btn" onclick="editExpense(${e.id})">✏️</button>
-                <button class="icon-btn" onclick="removeExpense(${e.id})">🗑️</button>
+                ${e.receipt ? `<button class="icon-btn" onclick="viewReceipt(${e.id})" aria-label="View receipt" style="color:var(--brand-text)">${icon('receipt')}</button>` : ''}
+                <button class="icon-btn" onclick="editExpense(${e.id})" aria-label="Edit">${icon('edit')}</button>
+                <button class="icon-btn danger" onclick="removeExpense(${e.id})" aria-label="Delete">${icon('trash')}</button>
               </div>
             </div>`;
           }).join('')
-        : '<div class="empty">No expenses yet. Add one above!</div>';
+        : emptyState('receipt', 'No expenses yet', people.length ? 'Tap "New expense" to add the first one.' : 'Add some members first, then add an expense.');
 
       // ---- balances ----
       const balance = calculateBalances();
-      document.getElementById('balances').innerHTML = people.map(p => {
+      document.getElementById('balances').innerHTML = people.length ? people.map(p => {
         const amt = balance[p];
         const cls = amt > 0.005 ? 'pos' : amt < -0.005 ? 'neg' : '';
         const text = amt > 0.005 ? 'is owed ' + money(amt)
                    : amt < -0.005 ? 'owes ' + money(-amt) : 'settled up';
-        return `<div class="row"><span class="title">${escapeHtml(p)}</span><span class="${cls}">${text}</span></div>`;
-      }).join('');
+        return `<div class="row">
+          <div class="person">${avatar(p, cls === 'neg' ? 'neg' : '')}<span class="title">${escapeHtml(p)}</span></div>
+          <span class="amount ${cls}" style="font-weight:${cls ? 700 : 500}">${text}</span>
+        </div>`;
+      }).join('') : emptyState('people', 'No members yet', 'Add people on the Members tab.');
 
       // ---- settlements ----
       lastSettlements = calculateSettlements();
       document.getElementById('settlements').innerHTML = lastSettlements.length
         ? lastSettlements.map((s, idx) => `
             <div class="row settle">
-              <span>${escapeHtml(s.from)} → <b>${escapeHtml(s.to)}</b> ${money(s.amt)}</span>
+              <div class="person">${avatar(s.from, 'neg')}
+                <div><div class="title">${escapeHtml(s.from)} → <b>${escapeHtml(s.to)}</b></div><div class="sub">pays ${money(s.amt)}</div></div>
+              </div>
               <button class="mini" onclick="markPaid(${idx})">Mark paid</button>
             </div>`).join('')
-        : '<div class="empty">Everyone is settled up 🎉</div>';
+        : emptyState('check', 'Everyone is settled up 🎉', cur().expenses.length ? 'No payments needed right now.' : 'Add an expense and the settle-up plan appears here.');
 
       // ---- recorded payments ----
       const payCard = document.getElementById('payments-card');
@@ -1666,24 +2366,70 @@
       oweRows.sort((a, b) => b.amt - a.amt);
 
       const netEl = document.getElementById('home-net');
-      if (!inAnyGroup)            { netEl.textContent = 'No balances yet'; netEl.className = ''; }
-      else if (net > 0.005)       { netEl.textContent = 'You are owed ' + money(net); netEl.className = 'pos'; }
-      else if (net < -0.005)      { netEl.textContent = 'You owe ' + money(-net); netEl.className = 'neg'; }
-      else                        { netEl.textContent = "You're all settled up 🎉"; netEl.className = ''; }
+      let netText, netCls;
+      if (!inAnyGroup)            { netText = meName ? 'No balances yet' : 'Tell us your name to get started'; netCls = ''; }
+      else if (net > 0.005)       { netText = 'You are owed ' + money(net); netCls = 'pos'; }
+      else if (net < -0.005)      { netText = 'You owe ' + money(-net); netCls = 'neg'; }
+      else                        { netText = "You're all settled up 🎉"; netCls = ''; }
+      if (netEl.textContent !== netText) {           // give the number a little "pop" when it changes
+        netEl.classList.remove('popped'); void netEl.offsetWidth; netEl.classList.add('popped');
+      }
+      netEl.textContent = netText;
+      netEl.className = netCls + (netEl.classList.contains('popped') ? ' popped' : '');
 
-      const homeRow = (r, cls) => `<div class="row" style="cursor:pointer" onclick="openGroupFromHome(${r.groupId})">
-          <div><div class="title">${escapeHtml(r.name)}</div><div class="sub">📁 ${escapeHtml(r.group)}</div></div>
-          <div style="display:flex; align-items:center; gap:6px">
+      // the in-vs-out bar under the headline
+      const totalOwed = owedRows.reduce((t, r) => t + r.amt, 0);
+      const totalOwe  = oweRows.reduce((t, r) => t + r.amt, 0);
+      const meter = document.getElementById('home-meter');
+      if (totalOwed + totalOwe > 0.005) {
+        const inPct = Math.round(totalOwed / (totalOwed + totalOwe) * 100);
+        meter.innerHTML = `
+          <div class="home-meter"><span class="in" style="width:${inPct}%"></span><span class="out" style="width:${100 - inPct}%"></span></div>
+          <div class="home-legend"><span>Owed to you <b class="pos">${money(totalOwed)}</b></span><span>You owe <b class="neg">${money(totalOwe)}</b></span></div>`;
+      } else {
+        meter.innerHTML = '';
+      }
+
+      // "This month" snapshot: every expense dated this month, across all your groups
+      const ym = todayISO().slice(0, 7);          // e.g. "2026-09"
+      let monthTotal = 0, monthMine = 0, monthCount = 0;
+      groups.forEach(g => g.expenses.forEach(e => {
+        if ((e.date || '').slice(0, 7) !== ym) return;
+        monthCount++;
+        monthTotal += e.amount;
+        const share = sharesOf(e)[meName];
+        if (share) monthMine += share;
+      }));
+      const monthName = new Date().toLocaleString(undefined, { month: 'long' });
+      document.getElementById('home-month').innerHTML = monthCount
+        ? `<div class="stat-grid">
+             <div class="stat"><div class="v">${money(monthMine)}</div><div class="k">Your share</div></div>
+             <div class="stat"><div class="v">${money(monthTotal)}</div><div class="k">All groups</div></div>
+             <div class="stat"><div class="v">${monthCount}</div><div class="k">Expense${monthCount === 1 ? '' : 's'}</div></div>
+           </div>`
+        : `<div class="empty" style="padding:8px 0 4px">Nothing spent in ${escapeHtml(monthName)} yet</div>`;
+
+      // each row gets a bar sized against the biggest amount in its list
+      const homeRow = (r, cls, max) => `<div class="row tappable" onclick="openGroupFromHome(${r.groupId})">
+          <div style="flex:1">
+            <div class="person">${avatar(r.name, cls === 'neg' ? 'neg' : '')}
+              <div style="flex:1"><div class="title">${escapeHtml(r.name)}</div><div class="sub">📁 ${escapeHtml(r.group)}</div></div>
+            </div>
+            <div class="bar ${cls === 'neg' ? 'neg' : ''}"><i style="width:${Math.max(4, Math.round(r.amt / max * 100))}%"></i></div>
+          </div>
+          <div class="actions" style="gap:6px">
             <span class="amount ${cls}">${money(r.amt)}</span>
-            <span style="color:var(--muted)">›</span>
+            <span class="chev">›</span>
           </div>
         </div>`;
+      const maxOwed = Math.max(...owedRows.map(r => r.amt), 0.01);
+      const maxOwe  = Math.max(...oweRows.map(r => r.amt), 0.01);
       document.getElementById('home-owed').innerHTML = owedRows.length
-        ? owedRows.map(r => homeRow(r, 'pos')).join('')
-        : '<div class="empty">No one owes you right now</div>';
+        ? owedRows.map(r => homeRow(r, 'pos', maxOwed)).join('')
+        : emptyState('wallet', 'No one owes you right now', inAnyGroup ? 'Expenses you pay for show up here.' : '');
       document.getElementById('home-owe').innerHTML = oweRows.length
-        ? oweRows.map(r => homeRow(r, 'neg')).join('')
-        : '<div class="empty">You don’t owe anyone right now</div>';
+        ? oweRows.map(r => homeRow(r, 'neg', maxOwe)).join('')
+        : emptyState('check', 'You don’t owe anyone', inAnyGroup ? 'Nice — nothing to pay back.' : '');
 
       // ---- account ----
       const acct = document.getElementById('account-email');
