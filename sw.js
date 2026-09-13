@@ -12,10 +12,18 @@
     your data is live (and just fail gracefully when offline).
 */
 
-const CACHE = 'split-v17';
+const CACHE = 'split-v18';
 const ASSETS = [
   './',
   './index.html',
+  // the installed-app details and icons (so the home-screen icon works offline too)
+  './manifest.webmanifest',
+  './icons/icon.svg',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './icons/maskable-192.png',
+  './icons/maskable-512.png',
+  './icons/apple-touch-icon.png',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'
 ];
 
