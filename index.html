@@ -490,6 +490,21 @@
     .bar.neg > i { background: var(--neg); }
     .chev { color: var(--muted); font-size: 18px; line-height: 1; }
 
+    /* ---- Search & filter bar + month headers on the Expenses tab ---- */
+    .filter-bar { display: flex; gap: 8px; margin-bottom: 4px; }
+    .search-wrap { position: relative; flex: 1; min-width: 0; }
+    .search-wrap svg { position: absolute; left: 13px; top: 50%; width: 18px; height: 18px; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+    .search-wrap input { padding-left: 40px; min-height: 44px; font-size: 15px; }
+    .search-wrap input::-webkit-search-cancel-button { -webkit-appearance: none; }
+    .filter-bar select { width: auto; flex: none; min-height: 44px; padding: 10px 32px 10px 12px; font-size: 14px; font-weight: 500; }
+    .month-head {
+      display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+      font-size: 12px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: var(--muted);
+      padding: 16px 0 6px; border-bottom: 1px solid var(--line);
+    }
+    .month-head .count { font-weight: 500; text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+    .filter-bar + #expense-list .month-head:first-child { padding-top: 10px; }
+
     /* ---- The expense form card opening/closing ---- */
     #expense-form-card.opening { animation: expand var(--normal) var(--ease) both; }
     #expense-form-card.closing { animation: collapse var(--fast) var(--ease) both; pointer-events: none; }
@@ -751,6 +766,20 @@
 
       <div class="card">
         <h2>Recent expenses</h2>
+        <!-- Search + date filter. These only change what's SHOWN, never the data. -->
+        <div class="filter-bar">
+          <div class="search-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+            <input id="expense-search" type="search" placeholder="Search by description or person" aria-label="Search expenses" autocomplete="off" oninput="renderExpenseList()" />
+          </div>
+          <select id="expense-range" aria-label="Show expenses from" onchange="renderExpenseList()">
+            <option value="all">All time</option>
+            <option value="month">This month</option>
+            <option value="lastmonth">Last month</option>
+            <option value="3months">Last 3 months</option>
+            <option value="year">This year</option>
+          </select>
+        </div>
         <div id="expense-list"></div>
       </div>
     </section>
@@ -2246,6 +2275,145 @@
     }
 
     /* =========================================================
+       THE EXPENSES LIST (with search, date filter and month headers)
+       This only changes what's SHOWN — the data underneath is untouched,
+       and every row keeps its edit / delete / receipt buttons.
+       ========================================================= */
+    // "2026-09" → "September 2026" (built by hand so time zones can't shift the month)
+    function monthLabel(ym) {
+      if (!ym) return 'No date';
+      const names = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      const [y, m] = ym.split('-');
+      return `${names[+m - 1] || '?'} ${y}`;
+    }
+    // Works out the first/last date (inclusive) for the chosen range, or null for "all time".
+    function dateRangeBounds(range) {
+      const today = todayISO();
+      const y = +today.slice(0, 4), m = +today.slice(5, 7);
+      const ym = (yy, mm) => `${yy}-${String(mm).padStart(2, '0')}`; // e.g. "2026-09"
+      const shift = n => { let yy = y, mm = m + n; while (mm < 1) { mm += 12; yy--; } return ym(yy, mm); };
+      if (range === 'month')     return { from: ym(y, m) + '-01',  to: ym(y, m) + '-31' };
+      if (range === 'lastmonth') return { from: shift(-1) + '-01', to: shift(-1) + '-31' };
+      if (range === '3months')   return { from: shift(-2) + '-01', to: ym(y, m) + '-31' };
+      if (range === 'year')      return { from: `${y}-01-01`,      to: `${y}-12-31` };
+      return null;
+    }
+    // Does this expense/payment match what's typed in the search box?
+    function matchesSearch(entry, q) {
+      if (!q) return true;
+      const it = entry.item;
+      const hay = entry.kind === 'payment'
+        ? ['payment', it.from, it.to]
+        : [it.desc, it.payer, it.note || '', ...Object.keys(sharesOf(it))];
+      return hay.some(s => String(s || '').toLowerCase().includes(q));
+    }
+    function clearExpenseFilters() {
+      document.getElementById('expense-search').value = '';
+      document.getElementById('expense-range').value = 'all';
+      renderExpenseList();
+    }
+
+    function renderExpenseList() {
+      const expList = document.getElementById('expense-list');
+      const people = cur().people;
+      const q = document.getElementById('expense-search').value.trim().toLowerCase();
+      const range = document.getElementById('expense-range').value;
+      const bounds = dateRangeBounds(range);
+
+      const feed = [
+        ...cur().expenses.map(e => ({ kind: 'expense', item: e })),
+        ...cur().payments.map(p => ({ kind: 'payment', item: p }))
+      ].sort((a, b) => byNewest(a.item, b.item));
+
+      // Nothing in the group at all → the friendly "get started" message
+      if (!feed.length) {
+        expList.innerHTML = emptyState('receipt', 'No expenses yet', people.length ? 'Tap "New expense" to add the first one.' : 'Add some members first, then add an expense.');
+        return;
+      }
+
+      const shown = feed.filter(entry => {
+        if (!matchesSearch(entry, q)) return false;
+        if (!bounds) return true;                       // "all time" keeps undated items too
+        const d = entry.item.date || '';
+        return d >= bounds.from && d <= bounds.to;
+      });
+
+      // Something's in the group, but nothing matches the search / date filter
+      if (!shown.length) {
+        expList.innerHTML = emptyState('receipt', 'Nothing matches', 'Try a different word or date range.')
+          + `<div style="text-align:center;margin-top:-8px"><button class="link" onclick="clearExpenseFilters()">Clear search &amp; filter</button></div>`;
+        return;
+      }
+
+      // Draw the rows, slipping in a header whenever the month changes
+      let html = '', lastMonth = null;
+      shown.forEach(entry => {
+        const ym = (entry.item.date || '').slice(0, 7);
+        if (ym !== lastMonth) {
+          lastMonth = ym;
+          // the header shows how many expenses that month has and what they add up to
+          const inMonth = shown.filter(x => x.kind === 'expense' && (x.item.date || '').slice(0, 7) === ym);
+          const total = inMonth.reduce((t, x) => t + x.item.amount, 0);
+          const count = inMonth.length ? `${inMonth.length} expense${inMonth.length === 1 ? '' : 's'} · ${money(total)}` : '';
+          html += `<div class="month-head" role="heading" aria-level="3"><span>${escapeHtml(monthLabel(ym))}</span><span class="count">${count}</span></div>`;
+        }
+        html += entry.kind === 'payment' ? paymentRowHtml(entry.item) : expenseRowHtml(entry.item);
+      });
+      expList.innerHTML = html;
+    }
+
+    // One settle-up payment row in the expenses list.
+    function paymentRowHtml(p) {
+      const dTag = p.date ? `<span class="tag">${fmtDate(p.date)}</span>` : '';
+      return `
+            <div class="row" data-id="p${p.id}">
+              <div>
+                <div class="title">💵 Payment${dTag}</div>
+                <div class="sub">${escapeHtml(p.from)} → <b>${escapeHtml(p.to)}</b></div>
+              </div>
+              <div class="actions">
+                <span class="amount" style="color:var(--muted)">${money(p.amount)}</span>
+                <button class="icon-btn danger" onclick="deletePaymentFromList(${p.id})" aria-label="Delete payment">${icon('trash')}</button>
+              </div>
+            </div>`;
+    }
+    // One expense row in the expenses list.
+    function expenseRowHtml(e) {
+      const ways = Object.keys(sharesOf(e)).length;
+      const how = e.splitType === 'full'     ? `${escapeHtml(e.sharedBy[0])} owes it all`
+                : e.splitType === 'custom'   ? 'custom split'
+                : e.splitType === 'percent'  ? 'split by %'
+                : e.splitType === 'itemized' ? 'itemized'
+                : `split ${ways} way${ways > 1 ? 's' : ''}`;
+      const dateTag = e.date ? `<span class="tag">${fmtDate(e.date)}</span>` : '';
+      // my position on this expense: what I paid minus my share.
+      // positive = I'm owed (green), negative = I owe (red), zero = not involved.
+      const sh = sharesOf(e);
+      const myNet = (e.payer === meName ? e.amount : 0) - (sh[meName] || 0);
+      const amtCls = myNet > 0.005 ? 'pos' : myNet < -0.005 ? 'neg' : '';
+      // your actual position on this expense (not the gross total)
+      const netTxt = myNet > 0.005 ? `You're owed ${money(myNet)}`
+                   : myNet < -0.005 ? `You owe ${money(-myNet)}`
+                   : '';
+      const netLine = netTxt ? `<div class="${amtCls}" style="font-size:12px;font-weight:600;margin-top:2px">${netTxt}</div>` : '';
+      return `
+            <div class="row" data-id="e${e.id}">
+              <div>
+                <div class="title">${escapeHtml(e.desc)}${dateTag}</div>
+                <div class="sub">${escapeHtml(e.payer)} paid · ${how}</div>
+                ${e.note ? `<div class="sub" style="font-style:italic">📝 ${escapeHtml(e.note)}</div>` : ''}
+                ${netLine}
+              </div>
+              <div class="actions">
+                <span class="amount">${money(e.amount)}</span>
+                ${e.receipt ? `<button class="icon-btn" onclick="viewReceipt(${e.id})" aria-label="View receipt" style="color:var(--brand-text)">${icon('receipt')}</button>` : ''}
+                <button class="icon-btn" onclick="editExpense(${e.id})" aria-label="Edit">${icon('edit')}</button>
+                <button class="icon-btn danger" onclick="removeExpense(${e.id})" aria-label="Delete">${icon('trash')}</button>
+              </div>
+            </div>`;
+    }
+
+    /* =========================================================
        DRAWING EVERYTHING ON SCREEN
        ========================================================= */
     function render() {
@@ -2298,64 +2466,7 @@
         </div>`).join('');
 
       // ---- expenses list (expenses + settle-up payments, newest first) ----
-      const expList = document.getElementById('expense-list');
-      const feed = [
-        ...cur().expenses.map(e => ({ kind: 'expense', item: e })),
-        ...cur().payments.map(p => ({ kind: 'payment', item: p }))
-      ].sort((a, b) => byNewest(a.item, b.item));
-
-      expList.innerHTML = feed.length
-        ? feed.map(entry => {
-            if (entry.kind === 'payment') {
-              const p = entry.item;
-              const dTag = p.date ? `<span class="tag">${fmtDate(p.date)}</span>` : '';
-              return `
-            <div class="row" data-id="p${p.id}">
-              <div>
-                <div class="title">💵 Payment${dTag}</div>
-                <div class="sub">${escapeHtml(p.from)} → <b>${escapeHtml(p.to)}</b></div>
-              </div>
-              <div class="actions">
-                <span class="amount" style="color:var(--muted)">${money(p.amount)}</span>
-                <button class="icon-btn danger" onclick="deletePaymentFromList(${p.id})" aria-label="Delete payment">${icon('trash')}</button>
-              </div>
-            </div>`;
-            }
-            const e = entry.item;
-            const ways = Object.keys(sharesOf(e)).length;
-            const how = e.splitType === 'full'     ? `${escapeHtml(e.sharedBy[0])} owes it all`
-                      : e.splitType === 'custom'   ? 'custom split'
-                      : e.splitType === 'percent'  ? 'split by %'
-                      : e.splitType === 'itemized' ? 'itemized'
-                      : `split ${ways} way${ways > 1 ? 's' : ''}`;
-            const dateTag = e.date ? `<span class="tag">${fmtDate(e.date)}</span>` : '';
-            // my position on this expense: what I paid minus my share.
-            // positive = I'm owed (green), negative = I owe (red), zero = not involved.
-            const sh = sharesOf(e);
-            const myNet = (e.payer === meName ? e.amount : 0) - (sh[meName] || 0);
-            const amtCls = myNet > 0.005 ? 'pos' : myNet < -0.005 ? 'neg' : '';
-            // your actual position on this expense (not the gross total)
-            const netTxt = myNet > 0.005 ? `You're owed ${money(myNet)}`
-                         : myNet < -0.005 ? `You owe ${money(-myNet)}`
-                         : '';
-            const netLine = netTxt ? `<div class="${amtCls}" style="font-size:12px;font-weight:600;margin-top:2px">${netTxt}</div>` : '';
-            return `
-            <div class="row" data-id="e${e.id}">
-              <div>
-                <div class="title">${escapeHtml(e.desc)}${dateTag}</div>
-                <div class="sub">${escapeHtml(e.payer)} paid · ${how}</div>
-                ${e.note ? `<div class="sub" style="font-style:italic">📝 ${escapeHtml(e.note)}</div>` : ''}
-                ${netLine}
-              </div>
-              <div class="actions">
-                <span class="amount">${money(e.amount)}</span>
-                ${e.receipt ? `<button class="icon-btn" onclick="viewReceipt(${e.id})" aria-label="View receipt" style="color:var(--brand-text)">${icon('receipt')}</button>` : ''}
-                <button class="icon-btn" onclick="editExpense(${e.id})" aria-label="Edit">${icon('edit')}</button>
-                <button class="icon-btn danger" onclick="removeExpense(${e.id})" aria-label="Delete">${icon('trash')}</button>
-              </div>
-            </div>`;
-          }).join('')
-        : emptyState('receipt', 'No expenses yet', people.length ? 'Tap "New expense" to add the first one.' : 'Add some members first, then add an expense.');
+      renderExpenseList(); // lives in its own function so the search box can redraw just the list
 
       // ---- balances ----
       const balance = calculateBalances();
