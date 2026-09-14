@@ -79,6 +79,10 @@
       --shadow-md: 0 6px 16px rgba(16, 24, 40, 0.10), 0 2px 4px rgba(16, 24, 40, 0.06);
       --shadow-lg: 0 18px 40px rgba(16, 24, 40, 0.20);
       --focus: 0 0 0 3px rgba(14, 124, 90, 0.25);
+      /* people/tag colours: a name picks a HUE (see nameHue in the script); these say
+         how strong and how light that hue is drawn — dark mode uses lighter versions */
+      --av-s: 58%;
+      --av-l: 36%;
 
       /* sizes */
       --radius-sm: 10px;
@@ -119,6 +123,8 @@
         --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.45);
         --shadow-lg: 0 18px 40px rgba(0, 0, 0, 0.6);
         --focus: 0 0 0 3px rgba(60, 207, 142, 0.3);
+        --av-s: 60%;
+        --av-l: 70%;
         color-scheme: dark;
       }
     }
@@ -144,8 +150,14 @@
       --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.45);
       --shadow-lg: 0 18px 40px rgba(0, 0, 0, 0.6);
       --focus: 0 0 0 3px rgba(60, 207, 142, 0.3);
+      --av-s: 60%;
+      --av-l: 70%;
       color-scheme: dark;
     }
+
+    /* Anything carrying a --ph (hue) gets its full colour worked out here, so it
+       follows light/dark mode on its own. (Set --pc directly to override.) */
+    [style*="--ph"] { --pc: hsl(var(--ph) var(--av-s) var(--av-l)); }
 
     /* ---- Motion: everything is quick and subtle. If the phone asks for
        "reduce motion", we switch all animation off. ---- */
@@ -482,6 +494,8 @@
       font-weight: 700; font-size: 14px; text-transform: uppercase;
     }
     .avatar.neg { background: var(--neg-soft); color: var(--neg); }
+    /* a smaller version for inline use (e.g. inside a sentence or a breakdown line) */
+    .avatar.sm { width: 22px; height: 22px; font-size: 10px; display: inline-grid; vertical-align: -6px; }
     .person { display: flex; align-items: center; gap: 12px; min-width: 0; }
 
     /* the checkbox list for equal splits */
@@ -606,6 +620,44 @@
     .spend-chart .hit:focus-visible .bar { stroke: var(--brand-text); stroke-width: 2; }
     .spend-legend { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); margin-top: 6px; }
     .spend-legend b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+    /* ---- Insights (opened from the Home tab; one group at a time) ---- */
+    .page-head { display: flex; align-items: center; gap: 6px; margin: -6px 0 10px; }
+    .page-head .back { padding-left: 0; display: inline-flex; align-items: center; gap: 2px; }
+    .page-head .back svg { width: 18px; height: 18px; }
+    .page-head .ph-title { flex: 1; min-width: 0; text-align: right; }
+    .page-head .ph-title .k { font-size: 11px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: var(--muted); }
+    .page-head .ph-title .g { font-weight: 700; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ins-lead { font-size: 13.5px; color: var(--muted); margin: 10px 0 0; }
+    .ins-lead b { color: var(--text); }
+    /* the "vs last month" note under the trend chart */
+    .trend-delta { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: var(--text); }
+    /* per-person rows: avatar, name, a bar, and the amount */
+    .ins-rows .ir { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+    .ins-rows .ir:last-child { border-bottom: none; }
+    .ins-rows .ir .mid { flex: 1; min-width: 0; }
+    .ins-rows .ir .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+    .ins-rows .ir .nm { font-weight: 600; font-size: 14.5px; min-width: 0; overflow-wrap: anywhere; }
+    .ins-rows .ir .nm .count { font-weight: 500; color: var(--muted); font-size: 12.5px; margin-left: 6px; }
+    .ins-rows .ir .amt { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .ins-rows .ir .bar { margin-top: 6px; }
+    .ins-rows .ir .bar > i { background: var(--pc, var(--brand-text)); opacity: 0.8; }
+    /* the tag donut + its legend */
+    .donut-wrap { display: flex; align-items: center; gap: 16px; }
+    .donut { width: 128px; height: 128px; flex: none; overflow: visible; }
+    .donut .hole-v { fill: var(--text); font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .donut .hole-k { fill: var(--muted); font-size: 9px; font-weight: 600; letter-spacing: 0.5px; }
+    .donut circle.seg { transition: opacity var(--fast) var(--ease); }
+    .donut-legend { flex: 1; min-width: 0; display: grid; gap: 6px; font-size: 13px; }
+    .donut-legend .lg { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .donut-legend .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--pc, var(--muted)); }
+    .donut-legend .lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+    .donut-legend .pct { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .donut-legend .amt { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    @media (max-width: 380px) { .donut-wrap { flex-direction: column; align-items: stretch; } .donut { margin: 0 auto; } }
+    /* the "biggest expenses" rank number */
+    .rank { width: 24px; height: 24px; border-radius: 8px; flex: none; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--surface-2); color: var(--muted); }
+    .rank.first { background: var(--brand-soft); color: var(--brand-text); }
 
     /* ---- Search & filter bar + month headers on the Expenses tab ---- */
     .filter-bar { display: flex; gap: 8px; margin-bottom: 4px; }
@@ -872,6 +924,13 @@
         <h2>Your spending<span class="count">last 6 months</span></h2>
         <div id="home-chart"></div>
       </div>
+      <!-- A doorway to the Insights screen (who spends most, biggest expenses, month by month).
+           It lives on its own screen rather than a sixth tab, so the tab bar stays roomy. -->
+      <div class="card" id="home-insights-card">
+        <h2>Insights</h2>
+        <p class="hint" id="home-insights-hint">Who spends most, the biggest expenses, and how each month compares.</p>
+        <button class="ghost" style="margin-top:4px" onclick="showPage('insights')">📊 See insights</button>
+      </div>
       <div class="card">
         <h2>You're owed</h2>
         <div id="home-owed"></div>
@@ -880,6 +939,19 @@
         <h2>You owe</h2>
         <div id="home-owe"></div>
       </div>
+    </section>
+
+    <!-- ============ INSIGHTS (reached from the Home tab, not the tab bar) ============
+         Charts and stats for the CURRENT group. Everything here is worked out on the
+         fly from the same expenses as the rest of the app — nothing extra is stored. -->
+    <section id="page-insights" class="page">
+      <div class="page-head">
+        <button class="link back" onclick="showPage('home')" aria-label="Back to Home">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>Home
+        </button>
+        <div class="ph-title"><div class="k">Insights</div><div class="g" id="insights-group"></div></div>
+      </div>
+      <div id="insights-body"></div>
     </section>
 
     <!-- ============ PAGE 1: EXPENSES ============ -->
@@ -1678,10 +1750,13 @@
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
       document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
       document.getElementById('page-' + name).classList.add('active');
-      document.getElementById('tab-' + name).classList.add('active');
+      // Some screens (like Insights) have no tab of their own — they belong to Home.
+      const tab = document.getElementById('tab-' + name) || document.getElementById('tab-home');
+      tab.classList.add('active');
       // tell screen readers which tab is the current one
       document.querySelectorAll('nav button').forEach(b => b.removeAttribute('aria-current'));
-      document.getElementById('tab-' + name).setAttribute('aria-current', 'page');
+      tab.setAttribute('aria-current', 'page');
+      if (name === 'insights') window.scrollTo({ top: 0, behavior: 'smooth' });
       render();
     }
 
@@ -3561,6 +3636,240 @@
     }
 
     /* =========================================================
+       NAME → COLOUR
+       Turns any name ("Alex", "food") into a hue (0–359) in a way that is
+       the same every time, on every device: the letters are mixed into a
+       number (a "hash"), and that number picks the hue. Nothing is stored —
+       the colour is simply re-worked-out from the name whenever it's needed.
+       The CSS decides how light/dark that hue is drawn (see --av-s / --av-l)
+       so it reads well in both light and dark mode.
+       ========================================================= */
+    function nameHue(name) {
+      const s = String(name || '').trim().toLowerCase();
+      let h = 5381;
+      for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0; // classic "djb2" mixing
+      return (h % 24) * 15; // 24 evenly spaced hues, 15° apart
+    }
+    // The same hue as an actual colour value (for SVG pictures, which can't read the CSS variables).
+    // "soft" = a see-through tint for backgrounds.
+    function nameColor(name, soft) {
+      const dark = currentTheme() === 'dark';
+      const h = nameHue(name), s = dark ? 60 : 58, l = dark ? 70 : 36;
+      return soft ? `hsl(${h} ${s}% ${l}% / 0.16)` : `hsl(${h} ${s}% ${l}%)`;
+    }
+
+    /* =========================================================
+       INSIGHTS (the screen you reach from Home → "See insights")
+       Everything is worked out from the CURRENT group's live expenses.
+       Deleted items sit in the group's "trash" list, not in expenses, so
+       they never reach these numbers.
+       ========================================================= */
+    // Gathers all the numbers the Insights screen needs, in one pass over the expenses.
+    function insightsFor(g) {
+      const exps = g.expenses;
+      const today = todayISO();
+      // the last 6 months as "YYYY-MM", oldest first (the last one is this month)
+      let y = +today.slice(0, 4), m = +today.slice(5, 7);
+      const months = [];
+      for (let i = 5; i >= 0; i--) {
+        let mm = m - i, yy = y;
+        while (mm < 1) { mm += 12; yy--; }
+        months.push({ ym: `${yy}-${String(mm).padStart(2, '0')}`, total: 0, count: 0 });
+      }
+      const byKey = Object.fromEntries(months.map(mo => [mo.ym, mo]));
+      const person = {};
+      g.people.forEach(p => { person[p] = { share: 0, paid: 0, paidCount: 0 }; });
+      const tags = {};
+      let untagged = 0, total = 0;
+      exps.forEach(e => {
+        total += e.amount;
+        const mo = byKey[(e.date || '').slice(0, 7)];
+        if (mo) { mo.total += e.amount; mo.count++; }
+        if (person[e.payer]) { person[e.payer].paid += e.amount; person[e.payer].paidCount++; }
+        const sh = sharesOf(e);
+        for (const n in sh) if (person[n]) person[n].share += sh[n];
+        if ((e.tags || []).length) e.tags.forEach(t => { tags[t] = (tags[t] || 0) + e.amount; });
+        else untagged += e.amount;
+      });
+      const payers = g.people.map(p => ({ name: p, ...person[p] }))
+        .sort((a, b) => b.paidCount - a.paidCount || b.paid - a.paid);
+      return {
+        exps, months, person, tags, untagged, total,
+        thisMonth: months[5].total, lastMonth: months[4].total,
+        avg: exps.length ? total / exps.length : 0,
+        topPayer: payers.length && payers[0].paidCount ? payers[0] : null,
+        biggest: exps.slice().sort((a, b) => b.amount - a.amount || byNewest(a, b)).slice(0, 5)
+      };
+    }
+
+    // The month-by-month bar chart (this group's whole spend), in the same style as the Home chart.
+    function insightsTrendSvg(months) {
+      const W = 320, H = 150, padL = 8, padR = 8, padT = 22, padB = 22;
+      const plotW = W - padL - padR, plotH = H - padT - padB, base = padT + plotH;
+      const max = Math.max(...months.map(mo => mo.total));
+      const slot = plotW / months.length, barW = Math.min(36, slot * 0.6);
+      const short = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const maxIdx = months.findIndex(mo => mo.total === max);
+      const barPath = (x, top, w, h) => {
+        const r = Math.min(4, h / 2);
+        if (h <= 0) return '';
+        return `M${x},${base} V${top + r} Q${x},${top} ${x + r},${top} H${x + w - r} Q${x + w},${top} ${x + w},${top + r} V${base} Z`;
+      };
+      const grid = [0.5, 1].map(f => `<line class="grid" x1="${padL}" x2="${W - padR}" y1="${(base - plotH * f).toFixed(1)}" y2="${(base - plotH * f).toFixed(1)}"/>`).join('');
+      const bars = months.map((mo, i) => {
+        const h = max > 0 ? (mo.total / max) * plotH : 0;
+        const x = padL + slot * i + (slot - barW) / 2, top = base - h;
+        const isNow = i === months.length - 1;
+        const label = `${monthLabel(mo.ym)}: ${money(mo.total)} (${mo.count} expense${mo.count === 1 ? '' : 's'})`;
+        const showVal = mo.total > 0.005 && (i === maxIdx || isNow);
+        return `<g class="hit" tabindex="0" role="img" aria-label="${escapeAttr(label)}">
+          <title>${escapeHtml(label)}</title>
+          <rect x="${(padL + slot * i).toFixed(1)}" y="${padT - 14}" width="${slot.toFixed(1)}" height="${plotH + 14}" fill="transparent"/>
+          ${h > 0 ? `<path class="bar${isNow ? ' now' : ''}" d="${barPath(x, top, barW, h)}"/>` : `<line class="grid" x1="${x.toFixed(1)}" x2="${(x + barW).toFixed(1)}" y1="${base}" y2="${base}" stroke-width="3" stroke-linecap="round"/>`}
+          ${showVal ? `<text class="val" x="${(x + barW / 2).toFixed(1)}" y="${(top - 6).toFixed(1)}" text-anchor="middle">${money(mo.total)}</text>` : ''}
+          <text class="axis" x="${(x + barW / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle"${isNow ? ' font-weight="600"' : ''}>${short[+mo.ym.slice(5, 7) - 1]}</text>
+        </g>`;
+      }).join('');
+      const summary = 'Spending by month, last 6 months: ' + months.map(mo => `${short[+mo.ym.slice(5, 7) - 1]} ${money(mo.total)}`).join(', ') + '.';
+      return `<svg class="spend-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeAttr(summary)}">
+        ${grid}${bars}<line class="grid" x1="${padL}" x2="${W - padR}" y1="${base}" y2="${base}"/>
+      </svg>`;
+    }
+
+    // A ring ("donut") chart. slices = [{ label, value, color }], drawn clockwise from the top.
+    function donutSvg(slices, total, centreValue, centreLabel) {
+      const R = 44, C = 60, circ = 2 * Math.PI * R;
+      let offset = 0;
+      const segs = slices.map(s => {
+        const len = total > 0 ? (s.value / total) * circ : 0;
+        // a slice is coloured by its hue (theme-aware, via the CSS above) or a fixed colour
+        const paint = s.hue != null ? `--ph:${s.hue};stroke:hsl(var(--ph) var(--av-s) var(--av-l))` : `stroke:${s.color}`;
+        const seg = `<circle class="seg" r="${R}" cx="${C}" cy="${C}" fill="none" style="${paint}" stroke-width="14"
+            stroke-dasharray="${Math.max(0, len - 1.5).toFixed(2)} ${(circ - Math.max(0, len - 1.5)).toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}"
+            transform="rotate(-90 ${C} ${C})"><title>${escapeHtml(`${s.label}: ${money(s.value)}`)}</title></circle>`;
+        offset += len;
+        return seg;
+      }).join('');
+      const summary = centreLabel + ': ' + slices.map(s => `${s.label} ${Math.round(s.value / total * 100)}%`).join(', ') + '.';
+      return `<svg class="donut" viewBox="0 0 120 120" role="img" aria-label="${escapeAttr(summary)}">
+        <circle r="${R}" cx="${C}" cy="${C}" fill="none" stroke="var(--surface-2)" stroke-width="14"/>
+        ${segs}
+        <text class="hole-v" x="${C}" y="${C + 2}" text-anchor="middle">${escapeHtml(centreValue)}</text>
+        <text class="hole-k" x="${C}" y="${C + 16}" text-anchor="middle">${escapeHtml(centreLabel.toUpperCase())}</text>
+      </svg>`;
+    }
+
+    // Draws the whole Insights screen (only when it's the screen on show).
+    function renderInsights() {
+      const page = document.getElementById('page-insights');
+      const body = document.getElementById('insights-body');
+      if (!page || !body || !page.classList.contains('active')) return;
+      const g = cur();
+      const d = insightsFor(g);
+      document.getElementById('insights-group').textContent = `${g.emoji} ${g.name}`;
+
+      if (!d.exps.length) {
+        body.innerHTML = `<div class="card">${emptyState('receipt', 'Nothing to show yet', 'Add a few expenses to this group and the charts will appear here.')}</div>`;
+        return;
+      }
+
+      // ---- headline numbers ----
+      const monthName = new Date().toLocaleString(undefined, { month: 'long' });
+      const payerLine = d.topPayer
+        ? `<p class="ins-lead">${avatar(d.topPayer.name, 'sm')} <b>${escapeHtml(d.topPayer.name)}</b> pays most often — ${d.topPayer.paidCount} of ${d.exps.length} expense${d.exps.length === 1 ? '' : 's'} (${money(d.topPayer.paid)}).</p>`
+        : '';
+      const stats = `<div class="card">
+        <h2>At a glance<span class="count">${d.exps.length} expense${d.exps.length === 1 ? '' : 's'}</span></h2>
+        <div class="stat-grid">
+          <div class="stat"><div class="v">${money(d.thisMonth)}</div><div class="k">${escapeHtml(monthName)}</div></div>
+          <div class="stat"><div class="v">${money(d.avg)}</div><div class="k">Avg. expense</div></div>
+          <div class="stat"><div class="v">${money(d.total)}</div><div class="k">All time</div></div>
+        </div>
+        ${payerLine}
+      </div>`;
+
+      // ---- month by month, with a "vs last month" note ----
+      let delta = '';
+      if (d.lastMonth > 0.005 && d.thisMonth > 0.005) {
+        const pct = Math.round((d.thisMonth - d.lastMonth) / d.lastMonth * 100);
+        delta = pct === 0 ? 'Same as last month so far'
+              : `<span class="trend-delta">${pct > 0 ? '↑' : '↓'} ${Math.abs(pct)}%</span> vs last month so far`;
+      } else if (d.lastMonth > 0.005) {
+        delta = `Nothing yet this month · ${money(d.lastMonth)} last month`;
+      } else if (d.thisMonth > 0.005) {
+        delta = 'Nothing was spent last month';
+      }
+      const sixTotal = d.months.reduce((t, mo) => t + mo.total, 0);
+      const trend = `<div class="card">
+        <h2>Month by month<span class="count">last 6 months</span></h2>
+        ${insightsTrendSvg(d.months)}
+        <div class="spend-legend"><span>${delta}</span><span>6-month total <b>${money(sixTotal)}</b></span></div>
+      </div>`;
+
+      // ---- spending by person (each person's share of the bills) ----
+      const people = g.people.map(p => ({ name: p, ...d.person[p] })).filter(p => p.share > 0.005 || p.paid > 0.005)
+        .sort((a, b) => b.share - a.share);
+      const maxShare = Math.max(...people.map(p => p.share), 0.01);
+      const byPerson = people.length ? `<div class="card">
+        <h2>Spending by person</h2>
+        <p class="hint">Each person's share of the bills, and what they paid out of pocket.</p>
+        <div class="ins-rows">${people.map(p => `
+          <div class="ir" style="--ph:${nameHue(p.name)}">
+            ${avatar(p.name)}
+            <div class="mid">
+              <div class="top">
+                <span class="nm">${escapeHtml(p.name)}${p.name === meName ? '<span class="count">you</span>' : ''}</span>
+                <span class="amt">${money(p.share)}</span>
+              </div>
+              <div class="bar" role="img" aria-label="${escapeAttr(`${p.name}: share ${money(p.share)}, paid ${money(p.paid)}`)}"><i style="width:${Math.max(3, Math.round(p.share / maxShare * 100))}%"></i></div>
+              <div class="sub" style="font-size:12px;color:var(--muted);margin-top:4px">paid ${money(p.paid)} · ${p.paidCount} time${p.paidCount === 1 ? '' : 's'}</div>
+            </div>
+          </div>`).join('')}</div>
+      </div>` : '';
+
+      // ---- spending by tag (a ring chart; only when tags are in use) ----
+      const tagNames = Object.keys(d.tags).sort((a, b) => d.tags[b] - d.tags[a] || a.localeCompare(b));
+      let byTag = '';
+      if (tagNames.length) {
+        const slices = tagNames.slice(0, 6).map(t => ({ label: t, value: d.tags[t], hue: nameHue(t) }));
+        const rest = tagNames.slice(6).reduce((t, n) => t + d.tags[n], 0);
+        if (rest > 0.005) slices.push({ label: 'other tags', value: rest, color: 'var(--muted)' });
+        if (d.untagged > 0.005) slices.push({ label: 'untagged', value: d.untagged, color: 'var(--line)' });
+        const tagTotal = slices.reduce((t, s) => t + s.value, 0);
+        byTag = `<div class="card">
+          <h2>Spending by tag</h2>
+          <div class="donut-wrap">
+            ${donutSvg(slices, tagTotal, String(tagNames.length), tagNames.length === 1 ? 'tag' : 'tags')}
+            <div class="donut-legend">${slices.map(s => `
+              <div class="lg" style="${s.hue != null ? `--ph:${s.hue}` : `--pc:${s.color}`}">
+                <span class="dot" aria-hidden="true"></span>
+                <span class="lbl">${escapeHtml(s.label)}</span>
+                <span class="pct">${Math.round(s.value / tagTotal * 100)}%</span>
+                <span class="amt">${money(s.value)}</span>
+              </div>`).join('')}</div>
+          </div>
+          <p class="hint" style="margin-top:10px">An expense with two tags counts towards both.</p>
+        </div>`;
+      }
+
+      // ---- the biggest expenses (tap one to see its details) ----
+      const biggest = `<div class="card">
+        <h2>Biggest expenses</h2>
+        ${d.biggest.map((e, i) => `
+          <div class="row tappable" role="button" tabindex="0" onclick="showExpenseDetails(${e.id})"
+               aria-label="${escapeAttr(`${e.desc}, ${money(e.amount)}, ${e.payer} paid. View details`)}">
+            <div class="person">
+              <span class="rank${i === 0 ? ' first' : ''}" aria-hidden="true">${i + 1}</span>
+              <div><div class="title">${escapeHtml(e.desc)}</div><div class="sub">${escapeHtml(e.payer)} paid${e.date ? ' · ' + escapeHtml(fmtDate(e.date)) : ''}</div></div>
+            </div>
+            <div class="actions" style="gap:6px"><span class="amount">${money(e.amount)}</span><span class="chev" aria-hidden="true">›</span></div>
+          </div>`).join('')}
+      </div>`;
+
+      body.innerHTML = stats + trend + byPerson + byTag + biggest;
+    }
+
+    /* =========================================================
        DRAWING EVERYTHING ON SCREEN
        ========================================================= */
     function render() {
@@ -3726,6 +4035,17 @@
 
       // the monthly spending chart
       renderSpendChart();
+
+      // the Insights doorway (a one-line teaser) and, if it's open, the Insights screen itself
+      const insHint = document.getElementById('home-insights-hint');
+      if (insHint) {
+        const n = cur().expenses.length;
+        const tot = cur().expenses.reduce((t, e) => t + e.amount, 0);
+        insHint.textContent = n
+          ? `${cur().emoji} ${cur().name}: ${money(tot)} across ${n} expense${n === 1 ? '' : 's'}. Who spends most, the biggest ones, and how each month compares.`
+          : 'Who spends most, the biggest expenses, and how each month compares. Add a few expenses to the current group first.';
+      }
+      renderInsights();
 
       // each row gets a bar sized against the biggest amount in its list
       // (role="button" + tabindex make the row reachable and pressable from a keyboard;
