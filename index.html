@@ -667,6 +667,16 @@
     .sheet .welcome-list li { display: flex; gap: 12px; align-items: flex-start; font-size: 14.5px; color: var(--text); }
     .sheet .welcome-list .w-ico { width: 38px; height: 38px; flex: none; border-radius: 12px; background: var(--brand-soft); color: var(--brand-text); display: grid; place-items: center; font-size: 18px; }
     .sheet .welcome-list small { display: block; color: var(--muted); font-size: 13px; }
+
+    /* ---- The "Share a summary" sheet: a preview of the picture + its buttons ---- */
+    .share-preview {
+      display: block; width: 100%; max-height: 42vh; object-fit: contain;
+      border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--surface-2);
+      margin: 8px 0 4px;
+    }
+    .sheet .share-actions button { margin-top: 8px; }
+    .sheet .share-actions .btn-row button { margin-top: 8px; }
+    .sheet .share-actions .close-link { display: block; margin: 4px auto 0; }
   </style>
 </head>
 
@@ -867,6 +877,7 @@
       </div>
       <div class="card">
         <h2>Tools</h2>
+        <button class="ghost" onclick="shareSummary()">📤 Share a summary of this group</button>
         <button class="ghost" onclick="exportCSV()">⬇️ Export this group to CSV</button>
         <button class="ghost" onclick="exportReport()">🧾 Export report with receipts (HTML)</button>
         <button class="ghost danger" onclick="resetGroup()">🧹 Clear all expenses &amp; payments</button>
@@ -2325,7 +2336,10 @@
     }
     function csvCell(v) { return `"${String(v).replace(/"/g, '""')}"`; }
     function download(text, filename, mime) {
-      const blob = new Blob([text], { type: mime || 'text/csv;charset=utf-8' });
+      downloadBlob(new Blob([text], { type: mime || 'text/csv;charset=utf-8' }), filename);
+    }
+    // Saves any file-like Blob (text, a PNG, …) with the given file name.
+    function downloadBlob(blob, filename) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = filename;
@@ -2465,6 +2479,235 @@
 
       const safeName = grp.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
       download(html, `split-report-${safeName}-${todayISO()}.html`, 'text/html;charset=utf-8');
+    }
+
+    /* =========================================================
+       SHARE A SUMMARY (Balances → Tools)
+       Builds a tidy picture of the current group — who owes whom, and
+       each person's balance — that you can send to the group chat.
+       The picture is drawn as SVG (plain text describing shapes) using
+       the app's own colours, then turned into a PNG with a <canvas>.
+       No libraries needed. Trashed items never reach these numbers
+       because calculateBalances / calculateSettlements only look at
+       the live expenses and payments.
+       ========================================================= */
+
+    // The plain-text version (for "Copy text" and for phones that can share text but not pictures).
+    function buildSummaryText(g) {
+      const balance = calculateBalances(g);
+      const setts = calculateSettlements(g);
+      const lines = [`${g.name} — Split summary (${fmtDate(todayISO())})`, ''];
+      lines.push('Who owes whom:');
+      if (setts.length) setts.forEach(s => lines.push(`• ${s.from} → ${s.to}: ${money(s.amt)}`));
+      else lines.push('• Everyone is settled up');
+      lines.push('', 'Balances:');
+      g.people.forEach(p => {
+        const amt = balance[p] || 0;
+        lines.push(`• ${p}: ${amt > 0.005 ? 'is owed ' + money(amt) : amt < -0.005 ? 'owes ' + money(-amt) : 'settled up'}`);
+      });
+      return lines.join('\n');
+    }
+
+    // Reads one of the design-system colours (the --names at the top of the file)
+    // as it is RIGHT NOW, so the picture matches light or dark mode.
+    function themeColor(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+    // Shorten a name so it can't run into the amount on the same line.
+    function clipText(s, max) { s = String(s); return s.length > max ? s.slice(0, max - 1) + '…' : s; }
+
+    // Draws the summary card as SVG. Returns { svg, width, height }.
+    function buildSummarySvg(g) {
+      const c = {
+        bg: themeColor('--surface'), text: themeColor('--text'), muted: themeColor('--muted'),
+        line: themeColor('--line'), brand: themeColor('--brand'), brandText: themeColor('--brand-text'),
+        brandSoft: themeColor('--brand-soft'), pos: themeColor('--pos'), neg: themeColor('--neg'),
+        negSoft: themeColor('--neg-soft'), inset: themeColor('--surface-2')
+      };
+      const font = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', system-ui, sans-serif";
+      const W = 1080, pad = 72, rowH = 84;
+      const balance = calculateBalances(g);
+      const setts = calculateSettlements(g);
+      const esc = escapeHtml;
+      const parts = [];
+      let y = 0;
+
+      // a person's initial in a round bubble (like the avatars in the app)
+      const bubble = (x, cy, name, red) =>
+        `<circle cx="${x + 28}" cy="${cy}" r="28" fill="${red ? c.negSoft : c.brandSoft}"/>
+         <text x="${x + 28}" y="${cy + 10}" text-anchor="middle" font-size="26" font-weight="700" fill="${red ? c.neg : c.brandText}">${esc(String(name || '?').trim().charAt(0).toUpperCase() || '?')}</text>`;
+      const heading = (label, top) =>
+        `<text x="${pad}" y="${top}" font-size="22" font-weight="700" letter-spacing="1.5" fill="${c.muted}">${esc(label.toUpperCase())}</text>`;
+      const divider = top => `<line x1="${pad}" x2="${W - pad}" y1="${top}" y2="${top}" stroke="${c.line}" stroke-width="2"/>`;
+
+      // ---- header: a brand-green band with the group name ----
+      const headerH = 250;
+      parts.push(`<rect x="0" y="0" width="${W}" height="${headerH}" fill="${c.brand}"/>`);
+      parts.push(`<rect x="0" y="${headerH - 14}" width="${W}" height="14" fill="${c.brand}" opacity="0.5"/>`);
+      parts.push(`<svg x="${pad}" y="72" width="56" height="56" viewBox="0 0 64 64">
+          <rect width="64" height="64" rx="14" fill="#ffffff" opacity="0.18"/>
+          <path d="M21 14h22a2 2 0 0 1 2 2v34l-4-3-4 3-4-3-4 3-4-3-4 3-2 1.5V16a2 2 0 0 1 2-2z" fill="#ffffff"/>
+          <path d="M26 23h12M26 30h12M26 37h8" stroke="${c.brand}" stroke-width="2.6" stroke-linecap="round" opacity=".55"/>
+          <path d="M10 43L54 21" stroke="${c.brand}" stroke-width="4.5" stroke-linecap="round"/>
+        </svg>`);
+      parts.push(`<text x="${pad + 72}" y="112" font-size="26" font-weight="600" fill="#ffffff" opacity="0.85">Split · summary</text>`);
+      parts.push(`<text x="${pad}" y="190" font-size="54" font-weight="800" letter-spacing="-1" fill="#ffffff">${esc(clipText(g.name, 26))}</text>`);
+      parts.push(`<text x="${W - pad}" y="112" text-anchor="end" font-size="24" fill="#ffffff" opacity="0.85">${esc(fmtDate(todayISO()))}</text>`);
+      y = headerH + 64;
+
+      // ---- who owes whom ----
+      parts.push(heading('Who owes whom', y));
+      y += 28;
+      if (setts.length) {
+        setts.forEach(s => {
+          const cy = y + rowH / 2;
+          parts.push(bubble(pad, cy, s.from, true));
+          parts.push(`<text x="${pad + 76}" y="${cy + 11}" font-size="30" font-weight="600" fill="${c.text}">${esc(clipText(s.from, 14))} <tspan fill="${c.muted}">→</tspan> <tspan font-weight="700" fill="${c.brandText}">${esc(clipText(s.to, 14))}</tspan></text>`);
+          parts.push(`<text x="${W - pad}" y="${cy + 11}" text-anchor="end" font-size="32" font-weight="700" fill="${c.text}">${esc(money(s.amt))}</text>`);
+          y += rowH;
+          parts.push(divider(y));
+        });
+      } else {
+        const cy = y + rowH / 2;
+        parts.push(`<circle cx="${pad + 28}" cy="${cy}" r="28" fill="${c.brandSoft}"/>
+          <path d="M${pad + 16} ${cy} l9 9 15-17" fill="none" stroke="${c.brandText}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>`);
+        parts.push(`<text x="${pad + 76}" y="${cy + 11}" font-size="30" font-weight="600" fill="${c.text}">Everyone is settled up</text>`);
+        y += rowH;
+        parts.push(divider(y));
+      }
+      y += 56;
+
+      // ---- each person's balance ----
+      parts.push(heading("Each person's balance", y));
+      y += 28;
+      g.people.forEach(p => {
+        const amt = balance[p] || 0;
+        const isPos = amt > 0.005, isNeg = amt < -0.005;
+        const txt = isPos ? 'is owed ' + money(amt) : isNeg ? 'owes ' + money(-amt) : 'settled up';
+        const col = isPos ? c.pos : isNeg ? c.neg : c.muted;
+        const cy = y + rowH / 2;
+        parts.push(bubble(pad, cy, p, isNeg));
+        parts.push(`<text x="${pad + 76}" y="${cy + 11}" font-size="30" font-weight="600" fill="${c.text}">${esc(clipText(p, 22))}</text>`);
+        parts.push(`<text x="${W - pad}" y="${cy + 11}" text-anchor="end" font-size="30" font-weight="${isPos || isNeg ? 700 : 500}" fill="${col}">${esc(txt)}</text>`);
+        y += rowH;
+        parts.push(divider(y));
+      });
+      if (!g.people.length) {
+        parts.push(`<text x="${pad}" y="${y + 50}" font-size="28" fill="${c.muted}">No members yet</text>`);
+        y += rowH;
+      }
+
+      // ---- footer ----
+      y += 60;
+      parts.push(`<text x="${W / 2}" y="${y}" text-anchor="middle" font-size="22" fill="${c.muted}">Made with Split</text>`);
+      const H = y + 56;
+
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${font}">
+        <rect width="${W}" height="${H}" rx="40" fill="${c.bg}"/>
+        <clipPath id="card"><rect width="${W}" height="${H}" rx="40"/></clipPath>
+        <g clip-path="url(#card)">${parts.join('\n')}</g>
+      </svg>`;
+      return { svg, width: W, height: H };
+    }
+
+    // Turns SVG text into a PNG file (a Blob) by drawing it onto a hidden canvas.
+    function svgToPngBlob(svg, width, height) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          const scale = 2; // draw at 2x so it stays crisp on phone screens
+          const canvas = document.createElement('canvas');
+          canvas.width = width * scale; canvas.height = height * scale;
+          const ctx = canvas.getContext('2d');
+          ctx.scale(scale, scale);
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob(b => b ? resolve(b) : reject(new Error('Could not make the picture')), 'image/png');
+        };
+        img.onerror = () => reject(new Error('Could not draw the picture'));
+        // a "data:" address holds the whole SVG inline, which every browser can draw safely
+        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+      });
+    }
+
+    // What the sheet is currently showing (the picture, its text version and file name).
+    let lastSummary = null;
+
+    // Opens the "Share a summary" sheet for the current group.
+    async function shareSummary() {
+      const g = cur();
+      if (!g.people.length) { toast('Add some members first — there’s nothing to summarise yet.', 'warn'); return; }
+      let blob;
+      try {
+        const { svg, width, height } = buildSummarySvg(g);
+        blob = await svgToPngBlob(svg, width, height);
+      } catch (e) {
+        console.warn('Summary image failed:', e);
+        toast('Sorry — the summary picture could not be made.', 'warn');
+        return;
+      }
+      const safeName = g.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+      const text = buildSummaryText(g);
+      const url = URL.createObjectURL(blob);
+      lastSummary = { blob, text, url, filename: `split-${safeName}-${todayISO()}.png`, title: `${g.name} — Split summary` };
+      const canShare = !!navigator.share; // the phone's own share menu (Messages, WhatsApp, …)
+      openSheet(
+        `<h3>Share a summary</h3>
+         <p>Who owes whom in “${escapeHtml(g.name)}”, as a picture you can send to the group.</p>
+         <img class="share-preview" src="${url}" alt="${escapeAttr(text)}" />
+         <div class="share-actions">
+           ${canShare ? `<button class="primary" onclick="shareSummaryNow()">Share…</button>` : ''}
+           <div class="btn-row">
+             <button class="ghost" onclick="saveSummaryImage()">Save image</button>
+             <button class="ghost" onclick="copySummaryText()">Copy text</button>
+           </div>
+           <button class="link muted close-link" onclick="closeSheet(null)">Close</button>
+         </div>`,
+        () => { URL.revokeObjectURL(url); lastSummary = null; } // tidy up when the sheet closes
+      );
+      const first = document.querySelector('#modal-host .share-actions button');
+      if (first) first.focus();
+    }
+    // Hand the picture (or, if the phone can't share files, the text) to the phone's share menu.
+    async function shareSummaryNow() {
+      const s = lastSummary;
+      if (!s) return;
+      try {
+        const file = new File([s.blob], s.filename, { type: 'image/png' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: s.title, text: s.title });
+        } else {
+          await navigator.share({ title: s.title, text: s.text });
+        }
+        closeSheet(true);
+      } catch (e) {
+        if (e && e.name === 'AbortError') return; // you changed your mind — not an error
+        console.warn('Share failed:', e);
+        toast('Sharing didn’t work here — try “Save image” or “Copy text”.', 'warn');
+      }
+    }
+    // Save the PNG to the phone / computer.
+    function saveSummaryImage() {
+      const s = lastSummary;
+      if (!s) return;
+      downloadBlob(s.blob, s.filename);
+      toast('Image saved', 'ok');
+    }
+    // Copy the plain-text version to the clipboard.
+    async function copySummaryText() {
+      const s = lastSummary;
+      if (!s) return;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(s.text);
+        else {
+          // older browsers: a hidden text box we select and copy from
+          const ta = document.createElement('textarea');
+          ta.value = s.text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+          document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+        }
+        toast('Summary copied', 'ok');
+      } catch (e) {
+        toast('Could not copy — your browser blocked it.', 'warn');
+      }
     }
 
     /* =========================================================
