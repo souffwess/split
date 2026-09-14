@@ -505,6 +505,33 @@
     .month-head .count { font-weight: 500; text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums; }
     .filter-bar + #expense-list .month-head:first-child { padding-top: 10px; }
 
+    /* ---- Swipe-to-reveal Edit / Delete on expense rows (phones) ----
+       The row sits on top of its hidden buttons; dragging slides it left. */
+    .swipe { position: relative; overflow: hidden; }
+    .swipe > .row {
+      position: relative; background: var(--surface);
+      border-bottom: 1px solid var(--line);   /* (the wrapper makes each row a "last child", so restate it) */
+      touch-action: pan-y;                 /* the browser handles up/down scrolling; we handle sideways */
+      transition: transform var(--normal) var(--ease), background var(--fast) var(--ease), background-color var(--normal) var(--ease);
+    }
+    .swipe:last-child > .row { border-bottom: none; }
+    .swipe-actions {
+      position: absolute; top: 0; bottom: 0; right: 0; display: flex; gap: 4px; padding: 4px 0;
+      /* hidden until you swipe; on close, wait for the row to slide back before hiding */
+      visibility: hidden; transition: visibility 0s linear var(--normal);
+    }
+    .swipe.dragging .swipe-actions, .swipe.open .swipe-actions { visibility: visible; transition-delay: 0s; }
+    .swipe-actions button {
+      width: 72px; border: none; border-radius: var(--radius-sm); color: #fff; cursor: pointer;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+      font-size: 12px; font-weight: 600; transition: filter var(--fast) var(--ease);
+    }
+    .swipe-actions button:active { filter: brightness(0.9); }
+    .swipe-actions svg { width: 20px; height: 20px; }
+    .swipe-actions .sw-edit { background: var(--brand); }
+    .swipe-actions .sw-del  { background: var(--neg); }
+    .swipe.open > .row { box-shadow: -6px 0 12px -8px rgba(0, 0, 0, 0.25); }
+
     /* ---- The expense form card opening/closing ---- */
     #expense-form-card.opening { animation: expand var(--normal) var(--ease) both; }
     #expense-form-card.closing { animation: collapse var(--fast) var(--ease) both; pointer-events: none; }
@@ -2362,10 +2389,21 @@
       expList.innerHTML = html;
     }
 
+    // On phones you can swipe a row left to reveal these buttons. They call the
+    // very same functions as the little icons on the row, so behaviour is identical.
+    // (aria-hidden: screen readers and the Tab key already reach the on-row icons.)
+    function swipeActionsHtml(buttons) {
+      return `<div class="swipe-actions" aria-hidden="true">${buttons.map(b =>
+        `<button type="button" tabindex="-1" class="${b.cls}" onclick="${b.onclick}">${icon(b.icon)}<span>${b.label}</span></button>`
+      ).join('')}</div>`;
+    }
+
     // One settle-up payment row in the expenses list.
     function paymentRowHtml(p) {
       const dTag = p.date ? `<span class="tag">${fmtDate(p.date)}</span>` : '';
       return `
+          <div class="swipe">
+            ${swipeActionsHtml([{ cls: 'sw-del', icon: 'trash', label: 'Delete', onclick: `deletePaymentFromList(${p.id})` }])}
             <div class="row" data-id="p${p.id}">
               <div>
                 <div class="title">💵 Payment${dTag}</div>
@@ -2375,7 +2413,8 @@
                 <span class="amount" style="color:var(--muted)">${money(p.amount)}</span>
                 <button class="icon-btn danger" onclick="deletePaymentFromList(${p.id})" aria-label="Delete payment">${icon('trash')}</button>
               </div>
-            </div>`;
+            </div>
+          </div>`;
     }
     // One expense row in the expenses list.
     function expenseRowHtml(e) {
@@ -2397,6 +2436,11 @@
                    : '';
       const netLine = netTxt ? `<div class="${amtCls}" style="font-size:12px;font-weight:600;margin-top:2px">${netTxt}</div>` : '';
       return `
+          <div class="swipe">
+            ${swipeActionsHtml([
+              { cls: 'sw-edit', icon: 'edit',  label: 'Edit',   onclick: `editExpense(${e.id})` },
+              { cls: 'sw-del',  icon: 'trash', label: 'Delete', onclick: `removeExpense(${e.id})` }
+            ])}
             <div class="row" data-id="e${e.id}">
               <div>
                 <div class="title">${escapeHtml(e.desc)}${dateTag}</div>
@@ -2410,8 +2454,98 @@
                 <button class="icon-btn" onclick="editExpense(${e.id})" aria-label="Edit">${icon('edit')}</button>
                 <button class="icon-btn danger" onclick="removeExpense(${e.id})" aria-label="Delete">${icon('trash')}</button>
               </div>
-            </div>`;
+            </div>
+          </div>`;
     }
+
+    /* =========================================================
+       SWIPE TO EDIT / DELETE (phones & tablets)
+       Drag an expense or payment row to the left and its Edit / Delete
+       buttons slide into view. This is purely an extra way to reach the
+       same buttons — tapping still works, and on a computer the little
+       icons on the row do the job. The listeners sit on the list itself,
+       so they survive every redraw.
+       ========================================================= */
+    (function setupSwipe() {
+      const list = document.getElementById('expense-list');
+      let row = null;        // the row being dragged right now
+      let startX = 0, startY = 0, baseX = 0, width = 0, currentX = 0;
+      let horizontal = null; // null = not decided yet, true = sideways swipe, false = scrolling
+      let openRow = null;    // the row whose buttons are currently showing (only ever one)
+
+      const actionsWidth = r => { const a = r.parentElement.querySelector('.swipe-actions'); return a ? a.offsetWidth : 0; };
+      // Move a row sideways. "snap" = animate to the spot (CSS handles the motion,
+      // and prefers-reduced-motion turns that animation off automatically).
+      function setX(r, x, snap) {
+        r.style.transition = snap ? '' : 'none';
+        r.style.transform = x ? `translateX(${x}px)` : '';
+      }
+      function closeOpen() {
+        if (!openRow) return;
+        setX(openRow, 0, true);
+        openRow.parentElement.classList.remove('open');
+        openRow = null;
+      }
+
+      list.addEventListener('touchstart', e => {
+        if (openRow && !openRow.isConnected) openRow = null; // the list was redrawn
+        row = e.target.closest('.swipe > .row');
+        if (!row) return;
+        const t = e.touches[0];
+        startX = t.clientX; startY = t.clientY;
+        horizontal = null;
+        width = actionsWidth(row);
+        baseX = row === openRow ? -width : 0;
+        currentX = baseX;
+      }, { passive: true });
+
+      list.addEventListener('touchmove', e => {
+        if (!row) return;
+        const t = e.touches[0];
+        const dx = t.clientX - startX, dy = t.clientY - startY;
+        if (horizontal === null) {
+          if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;   // too small to tell yet
+          horizontal = Math.abs(dx) > Math.abs(dy);            // decide: swipe or scroll?
+          if (horizontal && openRow && openRow !== row) closeOpen();
+          if (horizontal) row.parentElement.classList.add('dragging'); // show the buttons underneath
+        }
+        if (!horizontal) return;                                // it's a scroll — leave it alone
+        e.preventDefault();                                     // it's a swipe — don't scroll the page
+        let x = baseX + dx;
+        if (x > 0) x = x / 4;                                   // rubber-band if dragged the wrong way
+        if (x < -width) x = -width + (x + width) / 4;           // ...or past the buttons
+        currentX = x;
+        setX(row, x, false);
+      }, { passive: false });
+
+      function finish() {
+        if (!row) return;
+        row.parentElement.classList.remove('dragging');
+        if (horizontal) {
+          if (currentX < -width / 2) {                          // dragged more than halfway → stay open
+            setX(row, -width, true);
+            row.parentElement.classList.add('open');
+            openRow = row;
+          } else {                                              // otherwise spring shut
+            setX(row, 0, true);
+            row.parentElement.classList.remove('open');
+            if (openRow === row) openRow = null;
+          }
+        }
+        row = null;
+      }
+      list.addEventListener('touchend', finish);
+      list.addEventListener('touchcancel', finish);
+
+      // Tapping anywhere else (or on the open row itself) tucks the buttons away again.
+      document.addEventListener('touchstart', e => {
+        if (openRow && !e.target.closest('.swipe.open')) closeOpen();
+      }, { passive: true });
+      list.addEventListener('click', e => {
+        const r = e.target.closest('.swipe > .row');
+        if (r && r === openRow && !e.target.closest('button')) closeOpen();
+      });
+    })();
 
     /* =========================================================
        DRAWING EVERYTHING ON SCREEN
