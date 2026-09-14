@@ -12,7 +12,7 @@
     your data is live (and just fail gracefully when offline).
 */
 
-const CACHE = 'split-v22';
+const CACHE = 'split-v23';
 const ASSETS = [
   './',
   './index.html',

@@ -66,13 +66,14 @@
       --line: #e6e9ee;
       --brand-soft: #e5f4ee;    /* light green tint for chips/highlights */
       --brand-text: #0e7c5a;    /* green used for text on this background */
-      --pos: #128a63;           /* "you're owed" green */
-      --neg: #d43f2f;           /* "you owe" red */
+      --pos: #117a57;           /* "you're owed" green (dark enough to read at small sizes) */
+      --neg: #c73a2b;           /* "you owe" red */
+      --neg-btn: #c73a2b;       /* red for buttons with white text on them */
       --neg-soft: #fdecea;
-      --amber: #b45309;
+      --amber: #9a4707;
       --amber-soft: #fef3c7;
       --header-a: #0e7c5a;      /* header gradient start */
-      --header-b: #13976d;      /* header gradient end */
+      --header-b: #11875f;      /* header gradient end (white text stays readable on it) */
       --overlay: rgba(15, 20, 25, 0.45);
       --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16, 24, 40, 0.06);
       --shadow-md: 0 6px 16px rgba(16, 24, 40, 0.10), 0 2px 4px rgba(16, 24, 40, 0.06);
@@ -107,6 +108,7 @@
         --brand-text: #3ccf8e;
         --pos: #3ccf8e;
         --neg: #ff7a6b;
+        --neg-btn: #cf3d2e;       /* a deeper red so white button text stays readable */
         --neg-soft: rgba(255, 122, 107, 0.14);
         --amber: #fbbf24;
         --amber-soft: rgba(251, 191, 36, 0.14);
@@ -131,6 +133,7 @@
       --brand-text: #3ccf8e;
       --pos: #3ccf8e;
       --neg: #ff7a6b;
+      --neg-btn: #cf3d2e;       /* a deeper red so white button text stays readable */
       --neg-soft: rgba(255, 122, 107, 0.14);
       --amber: #fbbf24;
       --amber-soft: rgba(251, 191, 36, 0.14);
@@ -162,6 +165,16 @@
 
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html { background: var(--bg); }
+
+    /* ---- Keyboard focus: a clear ring when you Tab around (not when you tap/click) ---- */
+    :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+    header :focus-visible { outline-color: #fff; }                    /* on the green header */
+    input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; } /* fields already glow */
+    nav button:focus-visible { outline-offset: -6px; border-radius: 14px; }
+    .row.tappable:focus-visible { outline-offset: -2px; border-radius: var(--radius-sm); }
+    .icon-btn:focus-visible, .swipe-actions button:focus-visible { outline-offset: 0; }
+    /* Text that's only for screen readers (e.g. a description of a chart) */
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
     body {
       margin: 0;
@@ -199,7 +212,7 @@
     }
     /* the little sun/moon button */
     .theme-btn {
-      width: 40px; height: 40px; border-radius: 12px;
+      width: 44px; height: 44px; border-radius: 12px;
       border: 1px solid rgba(255,255,255,0.22);
       background: rgba(255,255,255,0.12);
       color: #fff; cursor: pointer; display: grid; place-items: center;
@@ -369,7 +382,7 @@
       color: #fff;
       border: none;
       padding: 8px 14px;
-      min-height: 36px;
+      min-height: 42px;
       font-size: 13px;
       font-weight: 600;
       border-radius: 999px;
@@ -403,7 +416,7 @@
     .row .title { font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
     .row .sub { font-size: 12.5px; color: var(--muted); margin-top: 1px; }
     .row .amount { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .row .actions { display: flex; align-items: center; gap: 2px; flex: none; }
+    .row .actions { display: flex; align-items: center; gap: 0; flex: none; }
     .row.leaving { animation: row-out var(--normal) var(--ease) forwards; overflow: hidden; }
     .row.tappable { cursor: pointer; }
     .row.tappable:active { background: var(--surface-2); }
@@ -411,7 +424,7 @@
     .icon-btn {
       background: none; border: none; color: var(--muted);
       font-size: 16px; cursor: pointer; padding: 0;
-      width: 34px; height: 36px; border-radius: 10px;
+      width: 42px; height: 44px; border-radius: 10px;   /* ~44px: comfortable to tap */
       display: inline-grid; place-items: center;
       transition: background var(--fast) var(--ease), transform var(--fast) var(--ease), color var(--fast) var(--ease);
     }
@@ -435,7 +448,7 @@
       margin: 0; cursor: pointer;
       display: flex; align-items: center; gap: 8px;
       background: var(--surface-2); border: 1px solid var(--line);
-      padding: 9px 14px; min-height: 40px; border-radius: 999px; font-size: 14px; font-weight: 500; color: var(--text);
+      padding: 9px 14px; min-height: 44px; border-radius: 999px; font-size: 14px; font-weight: 500; color: var(--text);
       transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
     }
     .people-checks label:has(input:checked) { background: var(--brand-soft); border-color: var(--brand); color: var(--brand-text); }
@@ -529,7 +542,7 @@
     .swipe-actions button:active { filter: brightness(0.9); }
     .swipe-actions svg { width: 20px; height: 20px; }
     .swipe-actions .sw-edit { background: var(--brand); }
-    .swipe-actions .sw-del  { background: var(--neg); }
+    .swipe-actions .sw-del  { background: var(--neg-btn); }
     .swipe.open > .row { box-shadow: -6px 0 12px -8px rgba(0, 0, 0, 0.25); }
 
     /* ---- The expense form card opening/closing ---- */
@@ -626,8 +639,8 @@
     .sheet p { margin: 0 0 8px; color: var(--muted); font-size: 14.5px; white-space: pre-line; line-height: 1.5; }
     .sheet .sheet-actions { display: flex; gap: 8px; margin-top: 16px; }
     .sheet .sheet-actions button { margin: 0; flex: 1; }
-    .sheet button.primary.danger { background: var(--neg); box-shadow: 0 2px 8px rgba(212, 63, 47, 0.3); }
-    .sheet button.primary.danger:active { background: color-mix(in srgb, var(--neg) 80%, black); }
+    .sheet button.primary.danger { background: var(--neg-btn); box-shadow: 0 2px 8px rgba(212, 63, 47, 0.3); }
+    .sheet button.primary.danger:active { background: color-mix(in srgb, var(--neg-btn) 80%, black); }
     .sheet input { margin-top: 8px; }
     .sheet .welcome-list { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 12px; }
     .sheet .welcome-list li { display: flex; gap: 12px; align-items: flex-start; font-size: 14.5px; color: var(--text); }
@@ -681,7 +694,7 @@
   </div>
 
   <!-- Tap a receipt to view it full-size here. -->
-  <div id="receipt-viewer" onclick="closeReceiptViewer()">
+  <div id="receipt-viewer" onclick="closeReceiptViewer()" role="dialog" aria-modal="true" aria-label="Receipt photo">
     <div class="viewer-inner" onclick="event.stopPropagation()">
       <img id="receipt-viewer-img" alt="receipt" />
       <p id="receipt-viewer-msg" class="hint"></p>
@@ -690,7 +703,7 @@
   </div>
 
   <!-- Little pop-up messages ("Saved!", "Please add a description") appear here. -->
-  <div id="toast-host" aria-live="polite"></div>
+  <div id="toast-host" aria-live="polite" role="status"></div>
 
   <!-- The in-app "Are you sure?" / "Rename…" sheet is built here when needed. -->
   <div id="modal-host"></div>
@@ -769,7 +782,7 @@
         </select>
 
         <label id="participants-label">Split between (tap to include)</label>
-        <div id="participants"></div>
+        <div id="participants" role="group" aria-labelledby="participants-label"></div>
         <div id="split-summary" class="split-summary"></div>
 
         <label for="note">Note (optional)</label>
@@ -844,7 +857,7 @@
       <div class="card">
         <h2>Which person are you?</h2>
         <p class="hint">Amounts turn green when you're owed and red when you owe.</p>
-        <select id="meSelect" onchange="setMe(this.value)"></select>
+        <select id="meSelect" onchange="setMe(this.value)" aria-label="Which person are you?"></select>
       </div>
       <div class="card">
         <h2>Members of this group</h2>
@@ -874,7 +887,7 @@
     </section>
   </main>
 
-  <nav>
+  <nav aria-label="Main">
     <div class="inner">
       <button id="tab-home" class="active" onclick="showPage('home')">
         <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8v9a2 2 0 0 1-2 2h-4v-6H9v6H5a2 2 0 0 1-2-2z"/></svg></span>Home
@@ -1101,7 +1114,8 @@
       const el = document.createElement('div');
       el.className = 'toast' + (kind ? ' ' + kind : '');
       const icon = kind === 'ok' ? '✓' : kind === 'warn' ? '!' : '';
-      if (icon) { const i = document.createElement('span'); i.className = 't-icon'; i.textContent = icon; el.appendChild(i); }
+      if (kind === 'warn') el.setAttribute('role', 'alert'); // screen readers announce problems straight away
+      if (icon) { const i = document.createElement('span'); i.className = 't-icon'; i.textContent = icon; i.setAttribute('aria-hidden', 'true'); el.appendChild(i); }
       const txt = document.createElement('span'); txt.textContent = message; el.appendChild(txt);
       host.appendChild(el);
       while (host.children.length > 3) host.firstChild.remove(); // never stack up too many
@@ -1111,14 +1125,19 @@
     }
 
     let sheetResolve = null; // the "answer" function for the sheet that's currently open
+    let sheetOpener = null;  // what had keyboard focus before the sheet opened (we hand it back after)
     // Draws a sheet. "resolver" is the function to call with the answer when it closes.
     function openSheet(innerHtml, resolver) {
       const host = document.getElementById('modal-host');
       if (sheetResolve) closeSheet(null);   // only one sheet at a time: cancel any older one first
       sheetResolve = resolver;
+      sheetOpener = document.activeElement;
       host.innerHTML =
         `<div class="modal-backdrop" onclick="closeSheet(null)"></div>
-         <div class="sheet" role="dialog" aria-modal="true"><div class="grip"></div>${innerHtml}</div>`;
+         <div class="sheet" role="dialog" aria-modal="true"><div class="grip" aria-hidden="true"></div>${innerHtml}</div>`;
+      // let screen readers announce the sheet by its heading
+      const heading = host.querySelector('.sheet h3');
+      if (heading) { heading.id = 'sheet-title'; host.querySelector('.sheet').setAttribute('aria-labelledby', 'sheet-title'); }
       host.classList.add('open');
     }
     function closeSheet(result) {
@@ -1126,6 +1145,9 @@
       host.classList.remove('open');
       host.innerHTML = '';
       const done = sheetResolve; sheetResolve = null;
+      // put keyboard focus back where it was (if that element is still on the page)
+      const back = sheetOpener; sheetOpener = null;
+      if (back && back.isConnected && typeof back.focus === 'function') { try { back.focus({ preventScroll: true }); } catch (e) {} }
       if (done) done(result);
     }
     // Close the sheet with the Escape key, like a normal dialog.
@@ -1148,7 +1170,7 @@
       return new Promise(resolve => {
         openSheet(
           `<h3>${escapeHtml(title)}</h3>${message ? `<p>${escapeHtml(message)}</p>` : ''}
-           <input id="sheet-input" type="text" value="${escapeAttr(value)}" placeholder="${escapeAttr(placeholder)}" autocomplete="off" />
+           <input id="sheet-input" type="text" value="${escapeAttr(value)}" placeholder="${escapeAttr(placeholder)}" autocomplete="off" aria-label="${escapeAttr(title)}" />
            <div class="sheet-actions">
              <button class="ghost" onclick="closeSheet(null)">${escapeHtml(cancelText)}</button>
              <button class="primary" onclick="closeSheet(document.getElementById('sheet-input').value)">${escapeHtml(okText)}</button>
@@ -1222,12 +1244,18 @@
       el.textContent = text;
       el.className = 'hint' + (bad ? ' bad' : '');
     }
-    function showApp()  { document.getElementById('auth-screen').style.display = 'none'; }
+    // While the login screen covers the app, "inert" stops the Tab key and screen
+    // readers from reaching the app underneath it.
+    function setAppInert(on) {
+      document.querySelectorAll('header, main, nav').forEach(el => { if (on) el.setAttribute('inert', ''); else el.removeAttribute('inert'); });
+    }
+    function showApp()  { document.getElementById('auth-screen').style.display = 'none'; setAppInert(false); }
     function showLogin() {
       document.getElementById('auth-loading').style.display = 'none';
       document.getElementById('auth-reset-form').style.display = 'none';
       document.getElementById('auth-form').style.display = 'block';
       document.getElementById('auth-screen').style.display = 'flex';
+      setAppInert(true);
     }
     // The "choose a new password" version of the login screen (after the email link).
     function showResetForm() {
@@ -1235,6 +1263,7 @@
       document.getElementById('auth-form').style.display = 'none';
       document.getElementById('auth-reset-form').style.display = 'block';
       document.getElementById('auth-screen').style.display = 'flex';
+      setAppInert(true);
     }
 
     // "Forgot password?" — Supabase emails a link that brings you back here to set a new one.
@@ -1384,8 +1413,19 @@
       document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
       document.getElementById('page-' + name).classList.add('active');
       document.getElementById('tab-' + name).classList.add('active');
+      // tell screen readers which tab is the current one
+      document.querySelectorAll('nav button').forEach(b => b.removeAttribute('aria-current'));
+      document.getElementById('tab-' + name).setAttribute('aria-current', 'page');
       render();
     }
+
+    // Some rows on Home are tappable <div>s. This lets the keyboard "click" them
+    // with Enter or Space, the way a real button works.
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const t = e.target;
+      if (t && t.getAttribute && t.getAttribute('role') === 'button' && t.tagName !== 'BUTTON') { e.preventDefault(); t.click(); }
+    });
 
     // From the Home dashboard: switch to a group and open its Expenses tab.
     function openGroupFromHome(id) {
@@ -1566,7 +1606,7 @@
         label.textContent = 'Who owes the full amount?';
         const chosen = preset && preset.sharedBy ? preset.sharedBy[0] : null;
         box.className = '';
-        box.innerHTML = `<select id="fullPerson">` + people.map(p =>
+        box.innerHTML = `<select id="fullPerson" aria-labelledby="participants-label">` + people.map(p =>
           `<option value="${escapeAttr(p)}" ${p === chosen ? 'selected' : ''}>${escapeHtml(p)}</option>`
         ).join('') + `</select>`;
       } else if (type === 'itemized') {
@@ -1578,14 +1618,14 @@
           `<div class="split-row">
             <span class="name"><b>Subtotal</b> (before tax/tip)</span>
             <span class="field"><span class="unit">$</span>
-              <input id="subtotalInput" type="number" inputmode="decimal" placeholder="0"
+              <input id="subtotalInput" type="number" inputmode="decimal" placeholder="0" aria-label="Subtotal before tax and tip"
                 value="${sub !== '' && sub != null ? sub : ''}" oninput="updateSplitSummary()"></span>
           </div>`
           + people.map(p => `
           <div class="split-row">
             <span class="name">${escapeHtml(p)}</span>
             <span class="field"><span class="unit">$</span>
-              <input type="text" placeholder="e.g. 5+3.04"
+              <input type="text" placeholder="e.g. 5+3.04" aria-label="${escapeAttr(p)}’s items"
                 data-name="${escapeAttr(p)}" value="${escapeAttr(items[p] != null ? items[p] : '')}"
                 oninput="updateSplitSummary()"></span>
           </div>
@@ -1600,7 +1640,7 @@
             <span class="name">${escapeHtml(p)}</span>
             <span class="field">
               ${isPercent ? '' : '<span class="unit">$</span>'}
-              <input type="number" inputmode="decimal" placeholder="0"
+              <input type="number" inputmode="decimal" placeholder="0" aria-label="${escapeAttr(p)}’s ${isPercent ? 'percentage' : 'amount'}"
                 data-name="${escapeAttr(p)}" value="${values[p] != null ? values[p] : ''}"
                 oninput="updateSplitSummary()">
               ${isPercent ? '<span class="unit">%</span>' : ''}
@@ -1932,6 +1972,7 @@
       document.getElementById('receipt-viewer-img').src = '';
       document.getElementById('receipt-viewer-msg').textContent = 'Loading…';
       viewer.style.display = 'flex';
+      const closeBtn = viewer.querySelector('button'); if (closeBtn) closeBtn.focus(); // keyboard lands inside the viewer
       try {
         const { data, error } = await db.storage.from('receipts').createSignedUrl(e.receipt, 3600);
         if (error) throw error;
@@ -2411,7 +2452,7 @@
               </div>
               <div class="actions">
                 <span class="amount" style="color:var(--muted)">${money(p.amount)}</span>
-                <button class="icon-btn danger" onclick="deletePaymentFromList(${p.id})" aria-label="Delete payment">${icon('trash')}</button>
+                <button class="icon-btn danger" onclick="deletePaymentFromList(${p.id})" aria-label="Delete ${escapeAttr(p.from)}’s payment to ${escapeAttr(p.to)}">${icon('trash')}</button>
               </div>
             </div>
           </div>`;
@@ -2450,9 +2491,9 @@
               </div>
               <div class="actions">
                 <span class="amount">${money(e.amount)}</span>
-                ${e.receipt ? `<button class="icon-btn" onclick="viewReceipt(${e.id})" aria-label="View receipt" style="color:var(--brand-text)">${icon('receipt')}</button>` : ''}
-                <button class="icon-btn" onclick="editExpense(${e.id})" aria-label="Edit">${icon('edit')}</button>
-                <button class="icon-btn danger" onclick="removeExpense(${e.id})" aria-label="Delete">${icon('trash')}</button>
+                ${e.receipt ? `<button class="icon-btn" onclick="viewReceipt(${e.id})" aria-label="View receipt for ${escapeAttr(e.desc)}" style="color:var(--brand-text)">${icon('receipt')}</button>` : ''}
+                <button class="icon-btn" onclick="editExpense(${e.id})" aria-label="Edit ${escapeAttr(e.desc)}">${icon('edit')}</button>
+                <button class="icon-btn danger" onclick="removeExpense(${e.id})" aria-label="Delete ${escapeAttr(e.desc)}">${icon('trash')}</button>
               </div>
             </div>
           </div>`;
@@ -2579,8 +2620,8 @@
                 <div><div class="title">${escapeHtml(p)}</div>${p === meName ? '<div class="sub">That’s you</div>' : ''}</div>
               </div>
               <div class="actions">
-                <button class="icon-btn" onclick="renamePerson(${idx})" aria-label="Rename">${icon('edit')}</button>
-                <button class="icon-btn danger" onclick="removePerson(${idx})" aria-label="Remove">${icon('trash')}</button>
+                <button class="icon-btn" onclick="renamePerson(${idx})" aria-label="Rename ${escapeAttr(p)}">${icon('edit')}</button>
+                <button class="icon-btn danger" onclick="removePerson(${idx})" aria-label="Remove ${escapeAttr(p)}">${icon('trash')}</button>
               </div>
             </div>`).join('')
         : emptyState('people', 'No members yet', 'Add the people you share costs with.');
@@ -2593,9 +2634,9 @@
             <div class="sub">${g.people.length} ${g.people.length === 1 ? 'person' : 'people'} · ${g.expenses.length} expense${g.expenses.length === 1 ? '' : 's'}</div>
           </div>
           <div class="actions">
-            ${g.id === currentId ? '' : `<button class="mini outline" onclick="switchGroup(${g.id})">Open</button>`}
-            <button class="icon-btn" onclick="renameGroup(${g.id})" aria-label="Rename">${icon('edit')}</button>
-            <button class="icon-btn danger" onclick="deleteGroup(${g.id})" aria-label="Delete">${icon('trash')}</button>
+            ${g.id === currentId ? '' : `<button class="mini outline" onclick="switchGroup(${g.id})" aria-label="Open ${escapeAttr(g.name)}">Open</button>`}
+            <button class="icon-btn" onclick="renameGroup(${g.id})" aria-label="Rename ${escapeAttr(g.name)}">${icon('edit')}</button>
+            <button class="icon-btn danger" onclick="deleteGroup(${g.id})" aria-label="Delete ${escapeAttr(g.name)}">${icon('trash')}</button>
           </div>
         </div>`).join('');
 
@@ -2623,7 +2664,7 @@
               <div class="person">${avatar(s.from, 'neg')}
                 <div><div class="title">${escapeHtml(s.from)} → <b>${escapeHtml(s.to)}</b></div><div class="sub">pays ${money(s.amt)}</div></div>
               </div>
-              <button class="mini" onclick="markPaid(${idx})">Mark paid</button>
+              <button class="mini" onclick="markPaid(${idx})" aria-label="Mark ${escapeAttr(s.from)}’s ${money(s.amt)} payment to ${escapeAttr(s.to)} as paid">Mark paid</button>
             </div>`).join('')
         : emptyState('check', 'Everyone is settled up 🎉', cur().expenses.length ? 'No payments needed right now.' : 'Add an expense and the settle-up plan appears here.');
 
@@ -2634,7 +2675,7 @@
         document.getElementById('payments-list').innerHTML = cur().payments.map(p => `
           <div class="row">
             <span>${escapeHtml(p.from)} paid <b>${escapeHtml(p.to)}</b> ${money(p.amount)}</span>
-            <button class="mini outline" onclick="undoPayment(${p.id})">Undo</button>
+            <button class="mini outline" onclick="undoPayment(${p.id})" aria-label="Undo ${escapeAttr(p.from)}’s ${money(p.amount)} payment to ${escapeAttr(p.to)}">Undo</button>
           </div>`).join('');
       } else {
         payCard.style.display = 'none';
@@ -2673,8 +2714,9 @@
       const meter = document.getElementById('home-meter');
       if (totalOwed + totalOwe > 0.005) {
         const inPct = Math.round(totalOwed / (totalOwed + totalOwe) * 100);
+        // the bar is a picture; the aria-label says the same thing in words for screen readers
         meter.innerHTML = `
-          <div class="home-meter"><span class="in" style="width:${inPct}%"></span><span class="out" style="width:${100 - inPct}%"></span></div>
+          <div class="home-meter" role="img" aria-label="${inPct}% of the money in play is owed to you, ${100 - inPct}% is what you owe"><span class="in" style="width:${inPct}%"></span><span class="out" style="width:${100 - inPct}%"></span></div>
           <div class="home-legend"><span>Owed to you <b class="pos">${money(totalOwed)}</b></span><span>You owe <b class="neg">${money(totalOwe)}</b></span></div>`;
       } else {
         meter.innerHTML = '';
@@ -2700,16 +2742,19 @@
         : `<div class="empty" style="padding:8px 0 4px">Nothing spent in ${escapeHtml(monthName)} yet</div>`;
 
       // each row gets a bar sized against the biggest amount in its list
-      const homeRow = (r, cls, max) => `<div class="row tappable" onclick="openGroupFromHome(${r.groupId})">
+      // (role="button" + tabindex make the row reachable and pressable from a keyboard;
+      //  the bar is decorative because the amount is already written next to it)
+      const homeRow = (r, cls, max) => `<div class="row tappable" role="button" tabindex="0" onclick="openGroupFromHome(${r.groupId})"
+          aria-label="${escapeAttr(cls === 'neg' ? `You owe ${r.name} ${money(r.amt)} in ${r.group}. Open group` : `${r.name} owes you ${money(r.amt)} in ${r.group}. Open group`)}">
           <div style="flex:1">
             <div class="person">${avatar(r.name, cls === 'neg' ? 'neg' : '')}
               <div style="flex:1"><div class="title">${escapeHtml(r.name)}</div><div class="sub">📁 ${escapeHtml(r.group)}</div></div>
             </div>
-            <div class="bar ${cls === 'neg' ? 'neg' : ''}"><i style="width:${Math.max(4, Math.round(r.amt / max * 100))}%"></i></div>
+            <div class="bar ${cls === 'neg' ? 'neg' : ''}" aria-hidden="true"><i style="width:${Math.max(4, Math.round(r.amt / max * 100))}%"></i></div>
           </div>
           <div class="actions" style="gap:6px">
             <span class="amount ${cls}">${money(r.amt)}</span>
-            <span class="chev">›</span>
+            <span class="chev" aria-hidden="true">›</span>
           </div>
         </div>`;
       const maxOwed = Math.max(...owedRows.map(r => r.amt), 0.01);
