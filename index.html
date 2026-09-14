@@ -252,6 +252,48 @@
     }
     #groupSelect:focus { outline: none; box-shadow: 0 0 0 3px rgba(255,255,255,0.25); }
     #groupSelect option { color: #111; background: #fff; font-weight: 400; }
+    /* room for the emoji tile on the left of the picker */
+    .group-picker #groupSelect { padding-left: 52px; }
+    .group-emoji {
+      position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+      width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center;
+      font-size: 17px; line-height: 1; pointer-events: none;
+      background: var(--gc, rgba(255,255,255,0.18));
+      box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.35);
+    }
+    /* ---- Group colour + emoji ---- */
+    /* the emoji on a softly tinted tile (lists on the Groups page and Home) */
+    .group-tile {
+      width: 36px; height: 36px; border-radius: 11px; flex: none;
+      display: grid; place-items: center; font-size: 19px; line-height: 1;
+      background: color-mix(in srgb, var(--gc, var(--brand)) 16%, var(--surface));
+      box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--gc, var(--brand)) 55%, transparent);
+    }
+    .group-tile.sm { width: 22px; height: 22px; border-radius: 7px; font-size: 12px; display: inline-grid; vertical-align: -5px; margin-right: 2px; }
+    /* the rows of icon / colour choices */
+    .pick-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+    .pick-row button {
+      font: inherit; cursor: pointer; padding: 0; margin: 0;
+      width: 44px; height: 44px; border-radius: 12px;
+      border: 1px solid var(--line); background: var(--surface-2);
+      display: grid; place-items: center; font-size: 21px; line-height: 1;
+      transition: transform var(--fast) var(--ease), background var(--fast) var(--ease), border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
+    }
+    .pick-row button:active { transform: scale(0.92); }
+    .pick-row button.pick[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); box-shadow: var(--focus); }
+    .pick-row button.swatch {
+      border-radius: 50%; background: var(--gc); border-color: transparent;
+      box-shadow: inset 0 0 0 2px color-mix(in srgb, #fff 25%, transparent);
+    }
+    .pick-row button.swatch[aria-pressed="true"] {
+      box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--gc);
+    }
+    .pick-row button.swatch[aria-pressed="true"]::after {
+      content: ''; width: 12px; height: 7px; margin-top: -3px;
+      border-left: 3px solid #fff; border-bottom: 3px solid #fff; transform: rotate(-45deg);
+    }
+    .sheet .pick-row { margin-bottom: 4px; }
+    .sheet label { margin-top: 14px; }
 
     /* ---- The tabs at the bottom ---- */
     nav {
@@ -804,6 +846,8 @@
         </button>
       </div>
       <div class="group-picker">
+        <!-- the current group's emoji, on a tile in the group's colour -->
+        <span id="group-emoji" class="group-emoji" aria-hidden="true"></span>
         <select id="groupSelect" onchange="switchGroup(this.value)" aria-label="Current group"></select>
       </div>
     </div>
@@ -983,7 +1027,12 @@
         <h2>New group / trip</h2>
         <p class="hint">Each group keeps its own people and expenses, separate from the others.</p>
         <label for="groupName">Name</label>
-        <input id="groupName" placeholder="e.g. Ski trip, Roommates" />
+        <input id="groupName" placeholder="e.g. Ski trip, Roommates" oninput="renderNewGroupPickers()" />
+        <!-- pick an icon and a colour for the new group (a guess is made from the name until you choose) -->
+        <label id="new-group-emoji-label">Icon</label>
+        <div id="new-group-emoji" class="pick-row" role="group" aria-labelledby="new-group-emoji-label"></div>
+        <label id="new-group-color-label">Colour</label>
+        <div id="new-group-color" class="pick-row" role="group" aria-labelledby="new-group-color-label"></div>
         <button class="primary" onclick="addGroup()">Create group</button>
       </div>
       <div class="card">
@@ -1049,6 +1098,11 @@
     // null = not chosen yet; on first run the app asks for your name (see firstRunSetup).
     let meName = load('split_meName', null);
 
+    // The choices for a group's accent colour and emoji icon (see "Group colour + emoji" below).
+    // Every colour here is dark enough for white text on top of it (used on the share card).
+    const GROUP_COLORS = ['#0e7c5a', '#2563eb', '#6d28d9', '#be185d', '#c2410c', '#b45309', '#0f766e', '#475569'];
+    const GROUP_EMOJIS = ['📁', '🏠', '✈️', '🎿', '🏖️', '⛺', '🚗', '🍕', '🍻', '🎉', '🎂', '🎓', '💼', '🛒', '🏔️', '🎮'];
+
     // First run OR upgrading from the old single-group version:
     if (!groups) {
       const oldPeople = load('split_people', null); // from the previous version, if any
@@ -1102,7 +1156,56 @@
       g.trash = Array.isArray(g.trash) ? g.trash : [];
       g.trash.forEach(t => { if (t.kind === 'expense') t.item = normalizeExpense(t.item); });
       repairItemizedKeys(g);
+      // a colour + emoji for each group (older data has none → pick sensible defaults)
+      if (!isGroupColor(g.color)) g.color = defaultGroupColor(g.id);
+      if (!isGroupEmoji(g.emoji)) g.emoji = guessGroupEmoji(g.name);
       return g;
+    }
+
+    /* ---- Group colour + emoji ----
+       Each group gets a small splash of personality: an emoji "icon" and an accent
+       colour. They're stored on the group (so they sync) and used in the header,
+       the group picker, the Home tab and the groups list. The colour is only ever
+       an accent (a tile behind the emoji, a ring) so text stays readable in both
+       light and dark mode. */
+    // (the GROUP_COLORS / GROUP_EMOJIS lists live near the top, next to the data, because
+    //  normalizeGroup needs them the moment the saved data is loaded)
+    function isGroupColor(c) { return typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c); }
+    function isGroupEmoji(e) { return typeof e === 'string' && e.trim().length > 0 && e.length <= 8; }
+    // Spread the palette across groups: the group's id picks a colour, so it's stable.
+    function defaultGroupColor(id) {
+      const n = Math.abs(Math.floor(Number(id) || 0));
+      return GROUP_COLORS[(Math.floor(n / 1000)) % GROUP_COLORS.length];
+    }
+    // Pick an emoji from words in the name ("Ski trip" → 🎿). Falls back to a folder.
+    function guessGroupEmoji(name) {
+      const n = String(name || '').toLowerCase();
+      const rules = [
+        [/ski|snow|mountain|hik/, '🎿'], [/beach|island|sun|cruise|pool/, '🏖️'], [/camp|tent|cabin/, '⛺'],
+        [/trip|travel|holiday|vacation|flight|europe|japan|paris|mexico/, '✈️'],
+        [/house|home|roommate|flat|apartment|rent|bills?/, '🏠'], [/road|drive|car|gas/, '🚗'],
+        [/pizza|dinner|food|lunch|brunch|restaurant/, '🍕'], [/bar|drinks?|beer|pub|wine/, '🍻'],
+        [/party|birthday|bday|wedding|celebrat/, '🎉'], [/school|uni|college|class/, '🎓'],
+        [/work|office|team|project/, '💼'], [/grocer|shop|costco|market/, '🛒'], [/game|poker|board/, '🎮']
+      ];
+      for (const [re, emoji] of rules) if (re.test(n)) return emoji;
+      return '📁';
+    }
+    // The emoji in a small coloured tile (used in lists). cls = extra CSS classes.
+    function groupTile(g, cls) {
+      return `<span class="group-tile${cls ? ' ' + cls : ''}" style="--gc:${escapeAttr(g.color)}" aria-hidden="true">${escapeHtml(g.emoji)}</span>`;
+    }
+    // The two rows of choices (emoji, then colour) used when creating or editing a group.
+    // "fn" is the name of the function to call when one is tapped.
+    function emojiPickerHtml(selected, fn) {
+      return GROUP_EMOJIS.map(e =>
+        `<button type="button" class="pick" onclick="${fn}('${escapeAttr(e)}')" aria-pressed="${e === selected}" aria-label="Icon ${escapeAttr(e)}">${escapeHtml(e)}</button>`
+      ).join('');
+    }
+    function colorPickerHtml(selected, fn) {
+      return GROUP_COLORS.map((c, i) =>
+        `<button type="button" class="swatch" style="--gc:${c}" onclick="${fn}('${c}')" aria-pressed="${c === selected}" aria-label="Colour ${i + 1}"></button>`
+      ).join('');
     }
 
     // One-time repair for an older bug where renaming a person didn't update an
@@ -1655,10 +1758,17 @@
       // If we don't know your name yet, ask now so you're a member of the new group.
       // (false = don't also add you to the OLD current group.)
       await ensureMeName(false);
-      const grp = { id: Date.now(), name, people: meName ? [meName] : [], expenses: [], payments: [], trash: [] };
+      const id = Date.now();
+      const grp = {
+        id, name, people: meName ? [meName] : [], expenses: [], payments: [], trash: [],
+        // the icon/colour you picked — or, if you didn't, a guess from the name and a fresh colour
+        emoji: newGroupEmoji || guessGroupEmoji(name),
+        color: newGroupColor || nextGroupColor()
+      };
       groups.push(grp);
       currentId = grp.id;        // switch to the new group
       input.value = '';
+      newGroupEmoji = null; newGroupColor = null; // back to "auto" for the next group
       cancelEdit();
       save();
       showPage('expenses');      // jump into the fresh group
@@ -1672,10 +1782,63 @@
       render();
     }
 
-    async function renameGroup(id) {
+    // The pencil on a group used to just rename it; now it opens the fuller
+    // "Edit group" sheet (name + icon + colour). Kept under its old name too.
+    function renameGroup(id) { return editGroup(id); }
+
+    /* ---- The "New group" form's icon + colour pickers ----
+       null means "auto": the icon follows the name as you type, and the colour
+       is the next one not already used by another group. */
+    let newGroupEmoji = null, newGroupColor = null;
+    function nextGroupColor() {
+      const used = groups.map(g => g.color);
+      return GROUP_COLORS.find(c => !used.includes(c)) || GROUP_COLORS[groups.length % GROUP_COLORS.length];
+    }
+    function renderNewGroupPickers() {
+      const emojiBox = document.getElementById('new-group-emoji');
+      const colorBox = document.getElementById('new-group-color');
+      if (!emojiBox || !colorBox) return;
+      const name = document.getElementById('groupName').value;
+      emojiBox.innerHTML = emojiPickerHtml(newGroupEmoji || guessGroupEmoji(name), 'pickNewGroupEmoji');
+      colorBox.innerHTML = colorPickerHtml(newGroupColor || nextGroupColor(), 'pickNewGroupColor');
+    }
+    function pickNewGroupEmoji(e) { newGroupEmoji = e; renderNewGroupPickers(); }
+    function pickNewGroupColor(c) { newGroupColor = c; renderNewGroupPickers(); }
+
+    /* ---- The "Edit group" sheet: rename, and change the icon / colour ---- */
+    let sheetGroupEmoji = null, sheetGroupColor = null; // what's currently picked in the open sheet
+    function pickSheetEmoji(e) { sheetGroupEmoji = e; const b = document.getElementById('sheet-emoji'); if (b) b.innerHTML = emojiPickerHtml(e, 'pickSheetEmoji'); }
+    function pickSheetColor(c) { sheetGroupColor = c; const b = document.getElementById('sheet-color'); if (b) b.innerHTML = colorPickerHtml(c, 'pickSheetColor'); }
+    async function editGroup(id) {
       const grp = groups.find(g => g.id === id);
-      const name = await askPrompt({ title: 'Rename group', value: grp.name, okText: 'Rename' });
-      if (name && name.trim()) { grp.name = name.trim(); save(); render(); }
+      if (!grp) return;
+      sheetGroupEmoji = grp.emoji; sheetGroupColor = grp.color;
+      const result = await new Promise(resolve => {
+        openSheet(
+          `<h3>Edit group</h3>
+           <label for="sheet-input">Name</label>
+           <input id="sheet-input" type="text" value="${escapeAttr(grp.name)}" placeholder="e.g. Ski trip" autocomplete="off" style="margin-top:0" />
+           <label id="sheet-emoji-label">Icon</label>
+           <div id="sheet-emoji" class="pick-row" role="group" aria-labelledby="sheet-emoji-label">${emojiPickerHtml(grp.emoji, 'pickSheetEmoji')}</div>
+           <label id="sheet-color-label">Colour</label>
+           <div id="sheet-color" class="pick-row" role="group" aria-labelledby="sheet-color-label">${colorPickerHtml(grp.color, 'pickSheetColor')}</div>
+           <div class="sheet-actions">
+             <button class="ghost" onclick="closeSheet(null)">Cancel</button>
+             <button class="primary" onclick="closeSheet(document.getElementById('sheet-input').value)">Save</button>
+           </div>`,
+          v => resolve(typeof v === 'string' ? v : null));
+        const input = document.getElementById('sheet-input');
+        input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); closeSheet(input.value); } });
+      });
+      if (result === null) return;                 // cancelled
+      const name = result.trim();
+      if (!name) { toast('A group needs a name.', 'warn'); return; }
+      grp.name = name;
+      if (isGroupEmoji(sheetGroupEmoji)) grp.emoji = sheetGroupEmoji;
+      if (isGroupColor(sheetGroupColor)) grp.color = sheetGroupColor;
+      save();
+      render();
+      toast('Group updated', 'ok');
     }
 
     async function deleteGroup(id) {
@@ -2709,18 +2872,19 @@
         `<text x="${pad}" y="${top}" font-size="22" font-weight="700" letter-spacing="1.5" fill="${c.muted}">${esc(label.toUpperCase())}</text>`;
       const divider = top => `<line x1="${pad}" x2="${W - pad}" y1="${top}" y2="${top}" stroke="${c.line}" stroke-width="2"/>`;
 
-      // ---- header: a brand-green band with the group name ----
+      // ---- header: a band in the group's own colour, with its emoji and name ----
+      const band = isGroupColor(g.color) ? g.color : c.brand;
       const headerH = 250;
-      parts.push(`<rect x="0" y="0" width="${W}" height="${headerH}" fill="${c.brand}"/>`);
-      parts.push(`<rect x="0" y="${headerH - 14}" width="${W}" height="14" fill="${c.brand}" opacity="0.5"/>`);
+      parts.push(`<rect x="0" y="0" width="${W}" height="${headerH}" fill="${band}"/>`);
+      parts.push(`<rect x="0" y="${headerH - 14}" width="${W}" height="14" fill="${band}" opacity="0.5"/>`);
       parts.push(`<svg x="${pad}" y="72" width="56" height="56" viewBox="0 0 64 64">
           <rect width="64" height="64" rx="14" fill="#ffffff" opacity="0.18"/>
           <path d="M21 14h22a2 2 0 0 1 2 2v34l-4-3-4 3-4-3-4 3-4-3-4 3-2 1.5V16a2 2 0 0 1 2-2z" fill="#ffffff"/>
-          <path d="M26 23h12M26 30h12M26 37h8" stroke="${c.brand}" stroke-width="2.6" stroke-linecap="round" opacity=".55"/>
-          <path d="M10 43L54 21" stroke="${c.brand}" stroke-width="4.5" stroke-linecap="round"/>
+          <path d="M26 23h12M26 30h12M26 37h8" stroke="${band}" stroke-width="2.6" stroke-linecap="round" opacity=".55"/>
+          <path d="M10 43L54 21" stroke="${band}" stroke-width="4.5" stroke-linecap="round"/>
         </svg>`);
       parts.push(`<text x="${pad + 72}" y="112" font-size="26" font-weight="600" fill="#ffffff" opacity="0.85">Split · summary</text>`);
-      parts.push(`<text x="${pad}" y="190" font-size="54" font-weight="800" letter-spacing="-1" fill="#ffffff">${esc(clipText(g.name, 26))}</text>`);
+      parts.push(`<text x="${pad}" y="190" font-size="54" font-weight="800" letter-spacing="-1" fill="#ffffff">${esc(g.emoji || '')} ${esc(clipText(g.name, 24))}</text>`);
       parts.push(`<text x="${W - pad}" y="112" text-anchor="end" font-size="24" fill="#ffffff" opacity="0.85">${esc(fmtDate(todayISO()))}</text>`);
       y = headerH + 64;
 
@@ -3321,7 +3485,10 @@
     function render() {
       // ---- group picker in the header ----
       document.getElementById('groupSelect').innerHTML =
-        groups.map(g => `<option value="${g.id}" ${g.id === currentId ? 'selected' : ''}>📁 ${escapeHtml(g.name)}</option>`).join('');
+        groups.map(g => `<option value="${g.id}" ${g.id === currentId ? 'selected' : ''}>${escapeHtml(g.emoji)} ${escapeHtml(g.name)}</option>`).join('');
+      // the current group's emoji tile beside the picker, in the group's colour
+      const tile = document.getElementById('group-emoji');
+      if (tile) { tile.textContent = cur().emoji; tile.style.setProperty('--gc', cur().color); }
 
       const people = cur().people;
 
@@ -3356,13 +3523,15 @@
       // ---- groups list ----
       document.getElementById('groups-list').innerHTML = groups.map(g => `
         <div class="row">
-          <div>
-            <div class="title">📁 ${escapeHtml(g.name)} ${g.id === currentId ? '<span class="current-tag">· current</span>' : ''}</div>
-            <div class="sub">${g.people.length} ${g.people.length === 1 ? 'person' : 'people'} · ${g.expenses.length} expense${g.expenses.length === 1 ? '' : 's'}</div>
+          <div class="person">${groupTile(g)}
+            <div>
+              <div class="title">${escapeHtml(g.name)} ${g.id === currentId ? '<span class="current-tag">· current</span>' : ''}</div>
+              <div class="sub">${g.people.length} ${g.people.length === 1 ? 'person' : 'people'} · ${g.expenses.length} expense${g.expenses.length === 1 ? '' : 's'}</div>
+            </div>
           </div>
           <div class="actions">
             ${g.id === currentId ? '' : `<button class="mini outline" onclick="switchGroup(${g.id})" aria-label="Open ${escapeAttr(g.name)}">Open</button>`}
-            <button class="icon-btn" onclick="renameGroup(${g.id})" aria-label="Rename ${escapeAttr(g.name)}">${icon('edit')}</button>
+            <button class="icon-btn" onclick="editGroup(${g.id})" aria-label="Edit ${escapeAttr(g.name)} (name, icon, colour)">${icon('edit')}</button>
             <button class="icon-btn danger" onclick="deleteGroup(${g.id})" aria-label="Delete ${escapeAttr(g.name)}">${icon('trash')}</button>
           </div>
         </div>`).join('');
@@ -3422,8 +3591,8 @@
         if (!g.people.includes(meName)) return; // you're not part of this group
         net += calculateBalances(g)[meName] || 0;
         calculateSettlements(g).forEach(s => {
-          if (s.to === meName)        owedRows.push({ name: s.from, group: g.name, groupId: g.id, amt: s.amt });
-          else if (s.from === meName) oweRows.push({ name: s.to,   group: g.name, groupId: g.id, amt: s.amt });
+          if (s.to === meName)        owedRows.push({ name: s.from, group: g.name, groupId: g.id, amt: s.amt, g });
+          else if (s.from === meName) oweRows.push({ name: s.to,   group: g.name, groupId: g.id, amt: s.amt, g });
         });
       });
       owedRows.sort((a, b) => b.amt - a.amt);
@@ -3484,7 +3653,7 @@
           aria-label="${escapeAttr(cls === 'neg' ? `You owe ${r.name} ${money(r.amt)} in ${r.group}. Open group` : `${r.name} owes you ${money(r.amt)} in ${r.group}. Open group`)}">
           <div style="flex:1">
             <div class="person">${avatar(r.name, cls === 'neg' ? 'neg' : '')}
-              <div style="flex:1"><div class="title">${escapeHtml(r.name)}</div><div class="sub">📁 ${escapeHtml(r.group)}</div></div>
+              <div style="flex:1"><div class="title">${escapeHtml(r.name)}</div><div class="sub">${groupTile(r.g, 'sm')}${escapeHtml(r.group)}</div></div>
             </div>
             <div class="bar ${cls === 'neg' ? 'neg' : ''}" aria-hidden="true"><i style="width:${Math.max(4, Math.round(r.amt / max * 100))}%"></i></div>
           </div>
@@ -3501,6 +3670,9 @@
       document.getElementById('home-owe').innerHTML = oweRows.length
         ? oweRows.map(r => homeRow(r, 'neg', maxOwe)).join('')
         : emptyState('check', 'You don’t owe anyone', inAnyGroup ? 'Nice — nothing to pay back.' : '');
+
+      // ---- the "New group" form's icon + colour choices ----
+      renderNewGroupPickers();
 
       // ---- account ----
       const acct = document.getElementById('account-email');
