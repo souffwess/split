@@ -2142,6 +2142,49 @@
       toast(wasEditing ? 'Changes saved' : 'Expense added', 'ok');
     }
 
+    // Tapping an expense row opens this read-only details view. The "Edit" button
+    // here is what actually opens the form (the pencil icon still edits directly).
+    function showExpenseDetails(id) {
+      const e = cur().expenses.find(x => x.id === id);
+      if (!e) return;
+      const shares = sharesOf(e);
+      const ways = Object.keys(shares).length;
+      const how = e.splitType === 'full'     ? `${escapeHtml(e.sharedBy[0])} owes it all`
+                : e.splitType === 'custom'   ? 'custom amounts'
+                : e.splitType === 'percent'  ? 'by percentage'
+                : e.splitType === 'itemized' ? 'itemized (tax &amp; tip split)'
+                : `split ${ways} way${ways > 1 ? 's' : ''}`;
+      const myNet = (e.payer === meName ? e.amount : 0) - (shares[meName] || 0);
+      const netTxt = myNet > 0.005 ? `You're owed ${money(myNet)}` : myNet < -0.005 ? `You owe ${money(-myNet)}` : '';
+      const netCls = myNet > 0.005 ? 'pos' : myNet < -0.005 ? 'neg' : '';
+      const breakdown = Object.keys(shares).map(n =>
+        `<div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line)">
+           <span>${escapeHtml(n)}${n === meName ? ' <span style="color:var(--muted)">(you)</span>' : ''}</span>
+           <span style="font-weight:600">${money(shares[n])}</span>
+         </div>`).join('');
+      const tags = (e.tags || []).length
+        ? `<div class="row-tags" style="margin-top:10px">${e.tags.map(t => `<span class="tag-chip">${escapeHtml(t)}</span>`).join('')}</div>` : '';
+      openSheet(
+        `<h3 style="margin:0 0 2px">${escapeHtml(e.desc)}</h3>
+         <div style="font-size:26px;font-weight:800">${money(e.amount)}</div>
+         ${netTxt ? `<div class="${netCls}" style="font-weight:700;margin-top:2px">${netTxt}</div>` : ''}
+         <div style="color:var(--muted);font-size:13px;line-height:2;margin-top:10px">
+           <div><b style="color:var(--text)">Paid by</b> &nbsp;${escapeHtml(e.payer)}</div>
+           ${e.date ? `<div><b style="color:var(--text)">Date</b> &nbsp;${escapeHtml(fmtDate(e.date))}</div>` : ''}
+           <div><b style="color:var(--text)">Split</b> &nbsp;${how}</div>
+         </div>
+         <div style="margin-top:8px">${breakdown}</div>
+         ${e.note ? `<div style="font-style:italic;color:var(--muted);margin-top:10px">📝 ${escapeHtml(e.note)}</div>` : ''}
+         ${tags}
+         ${e.receipt ? `<button class="ghost" style="width:100%;margin-top:12px" onclick="closeSheet(null); viewReceipt(${e.id})">🧾 View receipt</button>` : ''}
+         <div class="sheet-actions">
+           <button class="ghost" style="color:var(--neg)" onclick="closeSheet(null); removeExpense(${e.id})">Delete</button>
+           <button class="primary" onclick="closeSheet(null); editExpense(${e.id})">Edit</button>
+         </div>`,
+        () => {}
+      );
+    }
+
     function editExpense(id) {
       const e = cur().expenses.find(x => x.id === id);
       if (!e) return;
@@ -3380,8 +3423,8 @@
         }
       }, { passive: true });
 
-      // TAP TO EDIT. A genuine tap/click on an expense row opens it in the form
-      // (the same editExpense() the pencil icon uses). Payment rows aren't editable,
+      // TAP TO VIEW DETAILS. A genuine tap/click on an expense row opens a read-only
+      // details sheet (which has its own "Edit" button). Payment rows aren't editable,
       // so a tap on one does nothing. The row's inner buttons stop the click from
       // reaching here, so they keep their own jobs. This one listener sits on the
       // list, so it survives every redraw — and the keyboard helper near showPage()
@@ -3393,7 +3436,7 @@
         if (r === openRow) { closeOpen(); return; }            // tapping an open row just closes it
         if (swallowNextClick) { swallowNextClick = false; return; } // the tail end of a swipe
         const id = r.dataset.id || '';
-        if (id.charAt(0) === 'e') editExpense(Number(id.slice(1))); // "e123" = expense; "p123" = payment (ignored)
+        if (id.charAt(0) === 'e') showExpenseDetails(Number(id.slice(1))); // tap = view details (its Edit button opens the form); "p123" payments ignored
       });
     })();
 
