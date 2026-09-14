@@ -496,8 +496,10 @@
     .avatar {
       width: 36px; height: 36px; border-radius: 50%; flex: none;
       display: grid; place-items: center;
-      background: color-mix(in srgb, var(--pc, var(--brand-text)) 15%, var(--surface));
-      color: var(--pc, var(--brand-text));
+      /* colour comes from the name's hue (--ph); a vivid, distinct fill with white
+         initials, legible in both light and dark themes. */
+      background: hsl(var(--ph, 210), 62%, 46%);
+      color: #fff;
       font-weight: 700; font-size: 13.5px; letter-spacing: 0.2px; text-transform: uppercase;
       transition: background var(--normal) var(--ease), color var(--normal) var(--ease);
     }
@@ -981,7 +983,8 @@
       </div>
       <!-- A small bar chart of what you've spent (your share) each month, drawn as SVG
            right in the page so it works offline and follows the light/dark colours. -->
-      <div class="card" id="home-chart-card">
+      <!-- Hidden at the owner's request: the Insights screen's "Month by month" covers this. -->
+      <div class="card" id="home-chart-card" style="display:none">
         <h2>Your spending<span class="count">last 6 months</span></h2>
         <div id="home-chart"></div>
       </div>
@@ -2793,7 +2796,28 @@
     /* =========================================================
        THE MATH: who owes whom (within the current group)
        ========================================================= */
-    function sharesOf(e) {
+    // Shares rounded to whole cents so they sum EXACTLY to the expense total —
+    // this kills the "is owed $0.01" phantom that floating-point division leaves behind.
+    function sharesOf(e) { return roundSharesToCents(rawSharesOf(e), e.amount); }
+
+    // Spread whole cents so they add up to `total` exactly, giving any leftover
+    // cent(s) to the largest fractional remainders (the standard, fair way).
+    function roundSharesToCents(raw, total) {
+      const names = Object.keys(raw);
+      if (!names.length) return raw;
+      const target = Math.round((total || 0) * 100);
+      const cents = {}, rem = []; let sum = 0;
+      names.forEach(n => { const c = Math.floor(raw[n] * 100 + 1e-6); cents[n] = c; sum += c; rem.push({ n, r: raw[n] * 100 - c }); });
+      let left = target - sum;
+      rem.sort((a, b) => b.r - a.r);
+      for (let i = 0; i < rem.length && left > 0; i++) { cents[rem[i].n]++; left--; }
+      for (let i = rem.length - 1; i >= 0 && left < 0; i--) { if (cents[rem[i].n] > 0) { cents[rem[i].n]--; left++; } }
+      const out = {}; names.forEach(n => out[n] = cents[n] / 100);
+      return out;
+    }
+
+    // The raw (unrounded) share for each person, by split type.
+    function rawSharesOf(e) {
       if (e.splitType === 'full') return { [e.sharedBy[0]]: e.amount };
       if (e.splitType === 'custom' && e.shares) return e.shares;
       if (e.splitType === 'percent' && e.percents) {
