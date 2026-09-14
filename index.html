@@ -2686,14 +2686,17 @@
               { cls: 'sw-edit', icon: 'edit',  label: 'Edit',   onclick: `editExpense(${e.id})` },
               { cls: 'sw-del',  icon: 'trash', label: 'Delete', onclick: `removeExpense(${e.id})` }
             ])}
-            <div class="row" data-id="e${e.id}">
+            <div class="row tappable" data-id="e${e.id}" role="button" tabindex="0"
+                 aria-label="${escapeAttr(`${e.desc}, ${money(e.amount)}, ${e.payer} paid. Edit expense`)}">
               <div>
                 <div class="title">${escapeHtml(e.desc)}${dateTag}</div>
                 <div class="sub">${escapeHtml(e.payer)} paid · ${how}</div>
                 ${e.note ? `<div class="sub" style="font-style:italic">📝 ${escapeHtml(e.note)}</div>` : ''}
                 ${netLine}
               </div>
-              <div class="actions">
+              <!-- the little buttons keep their own jobs: stopPropagation means a tap on
+                   one of them never "bubbles up" and counts as a tap on the whole row -->
+              <div class="actions" onclick="event.stopPropagation()">
                 <span class="amount">${money(e.amount)}</span>
                 ${e.receipt ? `<button class="icon-btn" onclick="viewReceipt(${e.id})" aria-label="View receipt for ${escapeAttr(e.desc)}" style="color:var(--brand-text)">${icon('receipt')}</button>` : ''}
                 <button class="icon-btn" onclick="editExpense(${e.id})" aria-label="Edit ${escapeAttr(e.desc)}">${icon('edit')}</button>
@@ -2717,6 +2720,11 @@
       let startX = 0, startY = 0, baseX = 0, width = 0, currentX = 0;
       let horizontal = null; // null = not decided yet, true = sideways swipe, false = scrolling
       let openRow = null;    // the row whose buttons are currently showing (only ever one)
+      // TAP vs SWIPE: a finger that slid sideways is a swipe, not a tap. Browsers
+      // sometimes still fire a "click" at the end of a swipe, so we set this flag
+      // and ignore the very next click. (Also set when a tap merely closed an
+      // open row — closing it is the whole job of that tap.)
+      let swallowNextClick = false;
 
       const actionsWidth = r => { const a = r.parentElement.querySelector('.swipe-actions'); return a ? a.offsetWidth : 0; };
       // Move a row sideways. "snap" = animate to the spot (CSS handles the motion,
@@ -2767,6 +2775,8 @@
         if (!row) return;
         row.parentElement.classList.remove('dragging');
         if (horizontal) {
+          swallowNextClick = true;                              // it was a swipe, not a tap
+          setTimeout(() => { swallowNextClick = false; }, 400); // (only guard the click that follows right away)
           if (currentX < -width / 2) {                          // dragged more than halfway → stay open
             setX(row, -width, true);
             row.parentElement.classList.add('open');
@@ -2784,11 +2794,28 @@
 
       // Tapping anywhere else (or on the open row itself) tucks the buttons away again.
       document.addEventListener('touchstart', e => {
-        if (openRow && !e.target.closest('.swipe.open')) closeOpen();
+        if (openRow && !e.target.closest('.swipe.open')) {
+          closeOpen();
+          // that tap's job was to close the open row — don't ALSO open an expense for editing
+          swallowNextClick = true;
+          setTimeout(() => { swallowNextClick = false; }, 400);
+        }
       }, { passive: true });
+
+      // TAP TO EDIT. A genuine tap/click on an expense row opens it in the form
+      // (the same editExpense() the pencil icon uses). Payment rows aren't editable,
+      // so a tap on one does nothing. The row's inner buttons stop the click from
+      // reaching here, so they keep their own jobs. This one listener sits on the
+      // list, so it survives every redraw — and the keyboard helper near showPage()
+      // turns Enter / Space on a focused row into a click, so this works there too.
       list.addEventListener('click', e => {
         const r = e.target.closest('.swipe > .row');
-        if (r && r === openRow && !e.target.closest('button')) closeOpen();
+        if (!r) return;
+        if (e.target.closest('button, a, input')) return;      // an inner control — leave it alone
+        if (r === openRow) { closeOpen(); return; }            // tapping an open row just closes it
+        if (swallowNextClick) { swallowNextClick = false; return; } // the tail end of a swipe
+        const id = r.dataset.id || '';
+        if (id.charAt(0) === 'e') editExpense(Number(id.slice(1))); // "e123" = expense; "p123" = payment (ignored)
       });
     })();
 
