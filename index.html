@@ -2142,6 +2142,48 @@
       toast(wasEditing ? 'Changes saved' : 'Expense added', 'ok');
     }
 
+    // Builds the "how it was split" breakdown for the details view, tailored to the
+    // split type. Itemized shows each person's items (with the math) + tax/tip + final.
+    function splitBreakdownHtml(e) {
+      const shares = sharesOf(e);
+      const meTag = n => (n === meName ? ' <span style="color:var(--muted)">(you)</span>' : '');
+      const line = (left, right) =>
+        `<div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid var(--line)">
+           <span>${left}</span><span style="font-weight:700;white-space:nowrap">${right}</span></div>`;
+
+      if (e.splitType === 'itemized' && e.items && e.subtotal) {
+        const sub = evalAmount(e.subtotal);
+        const pct = sub > 0 ? Math.round((e.amount / sub - 1) * 1000) / 10 : 0;
+        const head = `<div style="color:var(--muted);font-size:12px;margin-bottom:2px">Subtotal ${money(sub)} · total ${money(e.amount)} · tax &amp; tip +${pct}%</div>`;
+        const rows = Object.keys(e.items).map(n => {
+          const pre = evalAmount(e.items[n]);        // their items, before tax & tip
+          const fin = shares[n] || 0;                // their final share, with tax & tip
+          const expr = String(e.items[n]);
+          const exprShown = /[+\-*/()]/.test(expr) ? `<span style="color:var(--muted)">${escapeHtml(expr)} = </span>` : '';
+          return `<div style="padding:6px 0;border-top:1px solid var(--line)">
+            <div style="display:flex;justify-content:space-between;gap:12px"><span>${escapeHtml(n)}${meTag(n)}</span><span style="font-weight:700;white-space:nowrap">${money(fin)}</span></div>
+            <div style="color:var(--muted);font-size:12px">items ${exprShown}${money(pre)} &nbsp;+&nbsp; ${money(fin - pre)} tax &amp; tip</div>
+          </div>`;
+        }).join('');
+        return head + rows;
+      }
+
+      if (e.splitType === 'percent' && e.percents) {
+        return Object.keys(shares).map(n =>
+          line(`${escapeHtml(n)}${meTag(n)} <span style="color:var(--muted)">· ${e.percents[n]}%</span>`, money(shares[n]))
+        ).join('');
+      }
+
+      if (e.splitType === 'equal') {
+        const each = Object.keys(shares).length ? shares[Object.keys(shares)[0]] : 0;
+        const head = `<div style="color:var(--muted);font-size:12px;margin-bottom:2px">Split evenly — ${money(each)} each</div>`;
+        return head + Object.keys(shares).map(n => line(`${escapeHtml(n)}${meTag(n)}`, money(shares[n]))).join('');
+      }
+
+      // custom exact amounts, or "one person owes it all"
+      return Object.keys(shares).map(n => line(`${escapeHtml(n)}${meTag(n)}`, money(shares[n]))).join('');
+    }
+
     // Tapping an expense row opens this read-only details view. The "Edit" button
     // here is what actually opens the form (the pencil icon still edits directly).
     function showExpenseDetails(id) {
@@ -2157,11 +2199,7 @@
       const myNet = (e.payer === meName ? e.amount : 0) - (shares[meName] || 0);
       const netTxt = myNet > 0.005 ? `You're owed ${money(myNet)}` : myNet < -0.005 ? `You owe ${money(-myNet)}` : '';
       const netCls = myNet > 0.005 ? 'pos' : myNet < -0.005 ? 'neg' : '';
-      const breakdown = Object.keys(shares).map(n =>
-        `<div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line)">
-           <span>${escapeHtml(n)}${n === meName ? ' <span style="color:var(--muted)">(you)</span>' : ''}</span>
-           <span style="font-weight:600">${money(shares[n])}</span>
-         </div>`).join('');
+      const breakdown = splitBreakdownHtml(e);
       const tags = (e.tags || []).length
         ? `<div class="row-tags" style="margin-top:10px">${e.tags.map(t => `<span class="tag-chip">${escapeHtml(t)}</span>`).join('')}</div>` : '';
       openSheet(
