@@ -502,6 +502,18 @@
     .bar > i { display: block; height: 100%; border-radius: 999px; background: var(--pos); transition: width 400ms var(--ease); }
     .bar.neg > i { background: var(--neg); }
     .chev { color: var(--muted); font-size: 18px; line-height: 1; }
+    /* the monthly spending chart */
+    .spend-chart { width: 100%; height: auto; display: block; overflow: visible; font-family: inherit; }
+    .spend-chart .grid { stroke: var(--line); stroke-width: 1; }
+    .spend-chart .axis { fill: var(--muted); font-size: 11px; }
+    .spend-chart .val { fill: var(--text); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .spend-chart .bar { fill: var(--brand-text); opacity: 0.55;  /* brand green; brighter in dark mode */ transition: opacity var(--fast) var(--ease); }
+    .spend-chart .bar.now { opacity: 1; }
+    .spend-chart .hit:hover .bar, .spend-chart .hit:focus .bar { opacity: 1; }
+    .spend-chart .hit { outline: none; }
+    .spend-chart .hit:focus-visible .bar { stroke: var(--brand-text); stroke-width: 2; }
+    .spend-legend { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+    .spend-legend b { color: var(--text); font-variant-numeric: tabular-nums; }
 
     /* ---- Search & filter bar + month headers on the Expenses tab ---- */
     .filter-bar { display: flex; gap: 8px; margin-bottom: 4px; }
@@ -749,6 +761,12 @@
       <div class="card" id="home-month-card">
         <h2>This month</h2>
         <div id="home-month"></div>
+      </div>
+      <!-- A small bar chart of what you've spent (your share) each month, drawn as SVG
+           right in the page so it works offline and follows the light/dark colours. -->
+      <div class="card" id="home-chart-card">
+        <h2>Your spending<span class="count">last 6 months</span></h2>
+        <div id="home-chart"></div>
       </div>
       <div class="card">
         <h2>You're owed</h2>
@@ -2756,6 +2774,88 @@
     })();
 
     /* =========================================================
+       THE SPENDING CHART (Home tab)
+       Your share of every expense, added up per month for the last six
+       months across all your groups. It's plain SVG built from the same
+       expense data as everything else — nothing extra is stored — and
+       recently-deleted items aren't in that data, so they're never counted.
+       ========================================================= */
+    function renderSpendChart() {
+      const box = document.getElementById('home-chart');
+      const card = document.getElementById('home-chart-card');
+      if (!box || !card) return;
+      if (!meName) { card.style.display = 'none'; return; }
+
+      // the last 6 months as "YYYY-MM" keys, oldest first
+      const today = todayISO();
+      let y = +today.slice(0, 4), m = +today.slice(5, 7);
+      const months = [];
+      for (let i = 5; i >= 0; i--) {
+        let mm = m - i, yy = y;
+        while (mm < 1) { mm += 12; yy--; }
+        months.push({ ym: `${yy}-${String(mm).padStart(2, '0')}`, mine: 0, total: 0, count: 0 });
+      }
+      const byKey = Object.fromEntries(months.map(mo => [mo.ym, mo]));
+      groups.forEach(g => g.expenses.forEach(e => {
+        const mo = byKey[(e.date || '').slice(0, 7)];
+        if (!mo) return;
+        mo.count++;
+        mo.total += e.amount;
+        mo.mine += sharesOf(e)[meName] || 0;
+      }));
+
+      const grand = months.reduce((t, mo) => t + mo.mine, 0);
+      if (grand < 0.005) { card.style.display = 'none'; return; }  // nothing to show yet
+      card.style.display = 'block';
+
+      // ---- geometry (in SVG units; the picture scales to the card width) ----
+      const W = 320, H = 150, padL = 8, padR = 8, padT = 22, padB = 22;
+      const plotW = W - padL - padR, plotH = H - padT - padB, base = padT + plotH;
+      const max = Math.max(...months.map(mo => mo.mine));
+      const slot = plotW / months.length, barW = Math.min(36, slot * 0.6);
+      const short = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const maxIdx = months.findIndex(mo => mo.mine === max);
+      const avg = grand / months.length;
+
+      // a bar with rounded top corners that sits flat on the baseline
+      const barPath = (x, top, w, h) => {
+        const r = Math.min(4, h / 2);
+        if (h <= 0) return '';
+        return `M${x},${base} V${top + r} Q${x},${top} ${x + r},${top} H${x + w - r} Q${x + w},${top} ${x + w},${top + r} V${base} Z`;
+      };
+      // two quiet guide lines (half and full height) so the eye has a scale
+      const grid = [0.5, 1].map(f => `<line class="grid" x1="${padL}" x2="${W - padR}" y1="${(base - plotH * f).toFixed(1)}" y2="${(base - plotH * f).toFixed(1)}"/>`).join('');
+      const baseline = `<line class="grid" x1="${padL}" x2="${W - padR}" y1="${base}" y2="${base}"/>`;
+
+      const bars = months.map((mo, i) => {
+        const h = max > 0 ? (mo.mine / max) * plotH : 0;
+        const x = padL + slot * i + (slot - barW) / 2, top = base - h;
+        const isNow = i === months.length - 1;
+        const label = `${monthLabel(mo.ym)}: your share ${money(mo.mine)} of ${money(mo.total)} across all groups (${mo.count} expense${mo.count === 1 ? '' : 's'})`;
+        // write the value only on the biggest bar and the current month (not on every bar)
+        const showVal = mo.mine > 0.005 && (i === maxIdx || isNow);
+        return `<g class="hit" tabindex="0" role="img" aria-label="${escapeAttr(label)}">
+          <title>${escapeHtml(label)}</title>
+          <rect x="${(padL + slot * i).toFixed(1)}" y="${padT - 14}" width="${slot.toFixed(1)}" height="${plotH + 14}" fill="transparent"/>
+          ${h > 0 ? `<path class="bar${isNow ? ' now' : ''}" d="${barPath(x, top, barW, h)}"/>` : `<line class="grid" x1="${x.toFixed(1)}" x2="${(x + barW).toFixed(1)}" y1="${base}" y2="${base}" stroke-width="3" stroke-linecap="round"/>`}
+          ${showVal ? `<text class="val" x="${(x + barW / 2).toFixed(1)}" y="${(top - 6).toFixed(1)}" text-anchor="middle">${money(mo.mine)}</text>` : ''}
+          <text class="axis" x="${(x + barW / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle"${isNow ? ' font-weight="600"' : ''}>${short[+mo.ym.slice(5, 7) - 1]}</text>
+        </g>`;
+      }).join('');
+
+      // a spoken summary of the whole picture for screen readers
+      const summary = `Your share of spending over the last 6 months: ` +
+        months.map(mo => `${short[+mo.ym.slice(5, 7) - 1]} ${money(mo.mine)}`).join(', ') +
+        `. Total ${money(grand)}, about ${money(avg)} a month.`;
+
+      box.innerHTML = `
+        <svg class="spend-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeAttr(summary)}">
+          ${grid}${bars}${baseline}
+        </svg>
+        <div class="spend-legend"><span>6-month total <b>${money(grand)}</b></span><span>about <b>${money(avg)}</b> a month</span></div>`;
+    }
+
+    /* =========================================================
        DRAWING EVERYTHING ON SCREEN
        ========================================================= */
     function render() {
@@ -2910,6 +3010,9 @@
              <div class="stat"><div class="v">${monthCount}</div><div class="k">Expense${monthCount === 1 ? '' : 's'}</div></div>
            </div>`
         : `<div class="empty" style="padding:8px 0 4px">Nothing spent in ${escapeHtml(monthName)} yet</div>`;
+
+      // the monthly spending chart
+      renderSpendChart();
 
       // each row gets a bar sized against the biggest amount in its list
       // (role="button" + tabindex make the row reachable and pressable from a keyboard;
