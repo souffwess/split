@@ -1023,7 +1023,25 @@
       g.payments = g.payments || [];
       g.trash = Array.isArray(g.trash) ? g.trash : [];
       g.trash.forEach(t => { if (t.kind === 'expense') t.item = normalizeExpense(t.item); });
+      repairItemizedKeys(g);
       return g;
+    }
+
+    // One-time repair for an older bug where renaming a person didn't update an
+    // itemized expense's per-person keys — leaving that person's items stored under
+    // their OLD name. When exactly one key is orphaned (no longer a person) AND exactly
+    // one person has no items entry, the mapping is unambiguous, so re-key it. This
+    // recovers the original math intact; ambiguous cases are left untouched.
+    function repairItemizedKeys(g) {
+      (g.expenses || []).forEach(e => {
+        if (e.splitType !== 'itemized' || !e.items) return;
+        const orphans = Object.keys(e.items).filter(k => !g.people.includes(k));
+        const missing = g.people.filter(p => !(p in e.items));
+        if (orphans.length === 1 && missing.length === 1) {
+          e.items[missing[0]] = e.items[orphans[0]];
+          delete e.items[orphans[0]];
+        }
+      });
     }
 
     // Upgrades an expense to the current shape (older versions had different fields,
@@ -1620,6 +1638,7 @@
         e.sharedBy = (e.sharedBy || []).map(ren);
         if (e.shares && e.shares[oldName] !== undefined)   { e.shares[newName]   = e.shares[oldName];   delete e.shares[oldName]; }
         if (e.percents && e.percents[oldName] !== undefined) { e.percents[newName] = e.percents[oldName]; delete e.percents[oldName]; }
+        if (e.items && e.items[oldName] !== undefined)     { e.items[newName]    = e.items[oldName];    delete e.items[oldName]; }
       });
       cur().payments.forEach(p => { p.from = ren(p.from); p.to = ren(p.to); });
       // ...including anything sitting in Recently deleted, so a restore still adds up
