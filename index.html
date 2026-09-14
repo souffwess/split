@@ -1372,6 +1372,20 @@
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
+    // Keyboard shortcuts in the expense form:
+    //  - Enter in the "What was it for?" or "Amount" box saves the expense
+    //  - Ctrl+Enter (Cmd+Enter on a Mac) saves from ANY field, including the note
+    //  - plain Enter in the note box just adds a new line, like you'd expect
+    document.getElementById('expense-form-card').addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      const quickField = e.target && (e.target.id === 'desc' || e.target.id === 'amount');
+      if (quickField || e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const btn = document.getElementById('save-btn');
+        if (btn && !btn.disabled) saveExpense(); // (disabled = a photo is still uploading)
+      }
+    });
+
     /* =========================================================
        GROUPS
        ========================================================= */
@@ -1654,6 +1668,7 @@
       const data = readForm();
       if (!data) return;
       const id = editingId !== null ? editingId : Date.now();
+      rememberFormPrefs(data.splitType, data.payer); // next new expense opens with these
 
       // Work out the receipt photo for this expense.
       let receiptPath = formReceiptPath; // keep the existing one by default
@@ -1710,16 +1725,37 @@
 
     function cancelEdit() { editingId = null; resetForm(); hideExpenseForm(); }
 
+    /* ---- Smart defaults for a NEW expense ----
+       We remember the split type and payer you used last time (per group) so the
+       form opens the way you usually use it. This is a small "preference" saved
+       only on this device under "split_formPrefs" — it's NOT part of the synced
+       data blob, so it can never clash with your expenses in the cloud. */
+    function formPrefs() { return load('split_formPrefs', {}) || {}; }
+    function rememberFormPrefs(splitType, payer) {
+      try {
+        const all = formPrefs();
+        all[currentId] = { splitType, payer };
+        localStorage.setItem('split_formPrefs', JSON.stringify(all));
+      } catch (e) { /* storage unavailable — no big deal, the defaults just won't stick */ }
+    }
+
     function resetForm() {
       editingId = null;
+      const pref = formPrefs()[currentId] || {};
+      const validTypes = ['equal', 'full', 'custom', 'percent', 'itemized'];
       document.getElementById('desc').value = '';
       document.getElementById('amount').value = '';
       document.getElementById('date').value = todayISO();
-      document.getElementById('splitType').value = 'equal';
+      // default to the split type you used last time in this group (or "Equally")
+      document.getElementById('splitType').value = validTypes.includes(pref.splitType) ? pref.splitType : 'equal';
       document.getElementById('form-title').textContent = 'Add an expense';
       document.getElementById('save-btn').textContent = 'Add expense';
       document.getElementById('note').value = '';
-      formPayer = meName; // a fresh expense defaults the payer to you
+      // default the payer to whoever paid last time (if they're still in the group), otherwise you
+      const people = cur() ? cur().people : [];
+      formPayer = (pref.payer && people.includes(pref.payer)) ? pref.payer : meName;
+      const payerSel = document.getElementById('payer');
+      if (payerSel && formPayer && people.includes(formPayer)) payerSel.value = formPayer;
       pendingReceiptFile = null;
       formReceiptPath = null;
       clearReceiptInputs();
