@@ -618,6 +618,15 @@
     .toast.ok    { border-left: 4px solid var(--pos); }
     .toast.warn  { border-left: 4px solid var(--neg); }
     .toast .t-icon { flex: none; font-size: 16px; line-height: 1.3; }
+    /* the optional button inside a toast (e.g. "Undo") */
+    .toast .t-action {
+      flex: none; margin: -6px -8px -6px 4px; padding: 6px 12px; min-height: 36px;
+      background: none; border: none; border-radius: 10px; cursor: pointer;
+      color: var(--brand-bright); font: inherit; font-weight: 700; letter-spacing: 0.2px;
+      transition: background var(--fast) var(--ease);
+    }
+    .toast .t-action:active { background: rgba(255, 255, 255, 0.12); }
+    .toast .t-action:focus-visible { outline-color: var(--brand-bright); }
 
     /* ---- The modal sheet (replaces the browser's confirm/prompt boxes) ---- */
     #modal-host { position: fixed; inset: 0; z-index: 1300; display: none; }
@@ -844,6 +853,13 @@
         <button class="ghost" onclick="exportReport()">🧾 Export report with receipts (HTML)</button>
         <button class="ghost danger" onclick="resetGroup()">🧹 Clear all expenses &amp; payments</button>
       </div>
+      <!-- Deleted expenses/payments wait here (per group) so you can change your mind. -->
+      <div class="card" id="trash-card" style="display:none">
+        <h2>Recently deleted<span class="count" id="trash-count"></span></h2>
+        <p class="hint">Deleted items wait here for 30 days, then disappear for good. They don't count towards anyone's balance.</p>
+        <div id="trash-list"></div>
+        <button class="ghost danger" onclick="emptyTrash()">Delete all of these forever</button>
+      </div>
     </section>
 
     <!-- ============ PAGE 3: PEOPLE ============ -->
@@ -926,7 +942,8 @@
     /* =========================================================
        THE DATA
        Everything is organised into GROUPS. Each group looks like:
-         { id, name, people:[...], expenses:[...], payments:[...] }
+         { id, name, people:[...], expenses:[...], payments:[...], trash:[...] }
+       ("trash" holds recently deleted expenses/payments for 30 days.)
        We remember which group is currently selected (currentId).
        ========================================================= */
 
@@ -954,8 +971,8 @@
         groups = [{ id: Date.now(), name: 'My Group', people: [], expenses: [], payments: [] }];
       }
     }
-    // make sure expenses always have the up-to-date shape
-    groups.forEach(g => g.expenses = g.expenses.map(normalizeExpense));
+    // make sure expenses always have the up-to-date shape (and every group has a trash list)
+    groups.forEach(normalizeGroup);
 
     // One-time rename of the ORIGINAL default person "Me" to "South" — this only
     // matters for data saved by the very first version of the app (before cloud sync).
@@ -980,6 +997,16 @@
     // pick a valid current group
     if (!currentId || !groups.find(g => g.id === currentId)) currentId = groups[0].id;
     save();
+
+    // Upgrades a whole group to the current shape: tidy expenses, and make sure the
+    // "trash" list (recently deleted items) exists — older data won't have it.
+    function normalizeGroup(g) {
+      g.expenses = (g.expenses || []).map(normalizeExpense);
+      g.payments = g.payments || [];
+      g.trash = Array.isArray(g.trash) ? g.trash : [];
+      g.trash.forEach(t => { if (t.kind === 'expense') t.item = normalizeExpense(t.item); });
+      return g;
+    }
 
     // Upgrades an expense to the current shape (older versions had different fields,
     // e.g. a "category" we've since removed). This keeps old saved data working.
@@ -1061,11 +1088,12 @@
         if (data && data.data && Array.isArray(data.data.groups) && data.data.groups.length) {
           // cloud has data → use it as the source of truth
           groups = data.data.groups;
-          groups.forEach(g => g.expenses = (g.expenses || []).map(normalizeExpense));
+          groups.forEach(normalizeGroup);
           currentId = data.data.currentId;
           if (data.data.meName) meName = data.data.meName;
           if (!groups.find(g => g.id === currentId)) currentId = groups[0].id;
           saveLocal();
+          purgeOldTrash(); // tidy anything deleted more than 30 days ago
         } else {
           // cloud is empty → this is your first login, so upload what's
           // already on this device (your existing expenses)
@@ -1108,9 +1136,12 @@
        These replace alert(), confirm() and prompt(), which looked out of place
        and caused focus glitches. "await" just means "wait for the answer".
        ========================================================= */
-    function toast(message, kind) {           // kind: 'ok' (green tick), 'warn' (red), or nothing
+    // kind: 'ok' (green tick), 'warn' (red), or nothing.
+    // opts.action = { label, fn } adds a button to the toast, e.g. "Undo".
+    function toast(message, kind, opts) {
       const host = document.getElementById('toast-host');
       if (!host) return;
+      const action = opts && opts.action;
       const el = document.createElement('div');
       el.className = 'toast' + (kind ? ' ' + kind : '');
       const icon = kind === 'ok' ? '✓' : kind === 'warn' ? '!' : '';
@@ -1120,7 +1151,14 @@
       host.appendChild(el);
       while (host.children.length > 3) host.firstChild.remove(); // never stack up too many
       const dismiss = () => { el.classList.add('out'); setTimeout(() => el.remove(), 180); };
-      const timer = setTimeout(dismiss, Math.min(7000, 2200 + message.length * 45)); // longer text stays longer
+      // toasts with a button stay a little longer so there's time to tap it
+      const timer = setTimeout(dismiss, action ? 6500 : Math.min(7000, 2200 + message.length * 45));
+      if (action) {
+        const btn = document.createElement('button');
+        btn.type = 'button'; btn.className = 't-action'; btn.textContent = action.label;
+        btn.onclick = ev => { ev.stopPropagation(); clearTimeout(timer); dismiss(); action.fn(); };
+        el.appendChild(btn);
+      }
       el.onclick = () => { clearTimeout(timer); dismiss(); };
     }
 
@@ -1492,7 +1530,7 @@
       // If we don't know your name yet, ask now so you're a member of the new group.
       // (false = don't also add you to the OLD current group.)
       await ensureMeName(false);
-      const grp = { id: Date.now(), name, people: meName ? [meName] : [], expenses: [], payments: [] };
+      const grp = { id: Date.now(), name, people: meName ? [meName] : [], expenses: [], payments: [], trash: [] };
       groups.push(grp);
       currentId = grp.id;        // switch to the new group
       input.value = '';
@@ -1566,6 +1604,16 @@
         if (e.percents && e.percents[oldName] !== undefined) { e.percents[newName] = e.percents[oldName]; delete e.percents[oldName]; }
       });
       cur().payments.forEach(p => { p.from = ren(p.from); p.to = ren(p.to); });
+      // ...including anything sitting in Recently deleted, so a restore still adds up
+      cur().trash.forEach(t => {
+        const it = t.item;
+        if (t.kind === 'payment') { it.from = ren(it.from); it.to = ren(it.to); return; }
+        it.payer = ren(it.payer);
+        it.sharedBy = (it.sharedBy || []).map(ren);
+        if (it.shares && it.shares[oldName] !== undefined)     { it.shares[newName]   = it.shares[oldName];   delete it.shares[oldName]; }
+        if (it.percents && it.percents[oldName] !== undefined) { it.percents[newName] = it.percents[oldName]; delete it.percents[oldName]; }
+        if (it.items && it.items[oldName] !== undefined)       { it.items[newName]    = it.items[oldName];    delete it.items[oldName]; }
+      });
 
       if (editingId !== null) cancelEdit(); // the open form may reference the old name
       save();
@@ -1578,6 +1626,14 @@
       const inPayment = cur().payments.some(p => p.from === name || p.to === name);
       if (inExpense || inPayment) {
         toast("Can't remove " + name + " — they're part of an expense or payment.", 'warn');
+        return;
+      }
+      // also check Recently deleted, so restoring something never points at a missing person
+      const inTrash = (cur().trash || []).some(t => t.kind === 'payment'
+        ? (t.item.from === name || t.item.to === name)
+        : (t.item.payer === name || sharesOf(t.item)[name] !== undefined));
+      if (inTrash) {
+        toast("Can't remove " + name + " — they're part of a recently deleted item. Delete it forever first (Balances → Recently deleted).", 'warn');
         return;
       }
       cur().people.splice(index, 1);
@@ -1864,17 +1920,124 @@
       if (!e) return;
       const yes = await askConfirm({
         title: 'Delete this expense?',
-        message: `${e.desc} — ${money(e.amount)}\n\nThis can't be undone.`,
+        message: `${e.desc} — ${money(e.amount)}\n\nYou can bring it back from "Recently deleted" for 30 days.`,
         okText: 'Delete', danger: true
       });
       if (!yes) return;
       if (editingId === id) cancelEdit();
       await animateOut(document.querySelector(`#expense-list .row[data-id="e${id}"]`)); // slide the row away
-      if (e.receipt) await deleteReceipt(e.receipt);
+      // Move it to the group's trash rather than deleting outright. The receipt photo
+      // stays in storage too, so "Undo" / "Restore" brings everything back intact.
+      const gid = currentId;
+      moveToTrash(cur(), 'expense', e);
       cur().expenses = cur().expenses.filter(x => x.id !== id);
       save();
       render();
-      toast('Expense deleted');
+      toast('Expense deleted', null, { action: { label: 'Undo', fn: () => restoreFromTrash(gid, 'expense', id) } });
+    }
+
+    /* =========================================================
+       RECENTLY DELETED ("trash")
+       Deleting an expense or payment parks it in the group's trash list
+       (which syncs with everything else) instead of removing it for good.
+       Trashed items are NOT in expenses/payments, so balances, the Home
+       tab, charts and exports simply never see them.
+       ========================================================= */
+    const TRASH_DAYS = 30;  // how long deleted items are kept
+    const TRASH_MAX = 50;   // ...and at most this many per group (keeps the synced data small)
+
+    function moveToTrash(g, kind, item) {
+      g.trash = g.trash || [];
+      g.trash.unshift({ kind, id: item.id, deletedAt: Date.now(), item });
+    }
+    // Put a trashed item back where it came from. Returns true if it worked.
+    function restoreFromTrash(groupId, kind, id) {
+      const g = groups.find(x => x.id === groupId);
+      if (!g) return false;
+      const idx = (g.trash || []).findIndex(t => t.kind === kind && t.id === id);
+      if (idx === -1) { toast('That item is no longer in Recently deleted.', 'warn'); return false; }
+      const [entry] = g.trash.splice(idx, 1);
+      if (kind === 'payment') g.payments.push(entry.item);
+      else g.expenses.unshift(entry.item);
+      save();
+      render();
+      toast(kind === 'payment' ? 'Payment restored' : 'Expense restored', 'ok');
+      return true;
+    }
+    // Remove one trashed item for good (this is when a receipt photo is finally deleted).
+    async function deleteForever(kind, id) {
+      const g = cur();
+      const entry = (g.trash || []).find(t => t.kind === kind && t.id === id);
+      if (!entry) return;
+      const label = kind === 'payment' ? `${entry.item.from} → ${entry.item.to} — ${money(entry.item.amount)}` : `${entry.item.desc} — ${money(entry.item.amount)}`;
+      const yes = await askConfirm({ title: 'Delete forever?', message: `${label}\n\nThis really can't be undone.`, okText: 'Delete forever', danger: true });
+      if (!yes) return;
+      await animateOut(document.querySelector(`#trash-list .row[data-id="${kind}${id}"]`));
+      if (kind === 'expense' && entry.item.receipt) await deleteReceipt(entry.item.receipt);
+      g.trash = g.trash.filter(t => t !== entry);
+      save();
+      render();
+      toast('Deleted forever');
+    }
+    async function emptyTrash() {
+      const g = cur();
+      if (!g.trash || !g.trash.length) return;
+      const n = g.trash.length;
+      const yes = await askConfirm({
+        title: 'Delete all of these forever?',
+        message: `${n} item${n === 1 ? '' : 's'} in Recently deleted will be gone for good, including any receipt photos.`,
+        okText: 'Delete forever', danger: true
+      });
+      if (!yes) return;
+      for (const t of g.trash) if (t.kind === 'expense' && t.item.receipt) await deleteReceipt(t.item.receipt);
+      g.trash = [];
+      save();
+      render();
+      toast('Recently deleted is now empty');
+    }
+    // Drops anything trashed more than TRASH_DAYS ago, and trims each group to TRASH_MAX
+    // items (oldest first). Receipt photos of purged expenses are cleaned up too.
+    function purgeOldTrash() {
+      const cutoff = Date.now() - TRASH_DAYS * 24 * 60 * 60 * 1000;
+      let changed = false;
+      groups.forEach(g => {
+        const list = (g.trash || []).slice().sort((a, b) => b.deletedAt - a.deletedAt); // newest first
+        const keep = list.filter((t, i) => t.deletedAt >= cutoff && i < TRASH_MAX);
+        if (keep.length !== list.length) {
+          list.filter(t => !keep.includes(t)).forEach(t => { if (t.kind === 'expense' && t.item.receipt && user) deleteReceipt(t.item.receipt); });
+          g.trash = keep;
+          changed = true;
+        }
+      });
+      if (changed) save();
+    }
+    // The "Recently deleted" card on the Balances tab.
+    function renderTrash() {
+      const card = document.getElementById('trash-card');
+      const list = (cur().trash || []).slice().sort((a, b) => b.deletedAt - a.deletedAt);
+      if (!list.length) { card.style.display = 'none'; return; }
+      card.style.display = 'block';
+      document.getElementById('trash-count').textContent = list.length;
+      document.getElementById('trash-list').innerHTML = list.map(t => {
+        const it = t.item;
+        const isPay = t.kind === 'payment';
+        const title = isPay ? `💵 ${escapeHtml(it.from)} → ${escapeHtml(it.to)}` : escapeHtml(it.desc);
+        const when = new Date(t.deletedAt);
+        const whenTxt = isNaN(when) ? '' : `Deleted ${fmtDate(new Date(when.getTime() - when.getTimezoneOffset() * 60000).toISOString().slice(0, 10))}`;
+        const sub = [it.date ? fmtDate(it.date) : '', isPay ? '' : `${escapeHtml(it.payer)} paid`, whenTxt].filter(Boolean).join(' · ');
+        const name = isPay ? `${it.from}’s payment to ${it.to}` : it.desc;
+        return `<div class="row" data-id="${t.kind}${t.id}">
+          <div>
+            <div class="title">${title}</div>
+            <div class="sub">${sub}</div>
+          </div>
+          <div class="actions" style="gap:4px">
+            <span class="amount" style="color:var(--muted)">${money(it.amount)}</span>
+            <button class="mini outline" onclick="restoreFromTrash(${currentId}, '${t.kind}', ${t.id})" aria-label="Restore ${escapeAttr(name)}">Restore</button>
+            <button class="icon-btn danger" onclick="deleteForever('${t.kind}', ${t.id})" aria-label="Delete ${escapeAttr(name)} forever" title="Delete forever">${icon('trash')}</button>
+          </div>
+        </div>`;
+      }).join('');
     }
 
     /* =========================================================
@@ -2069,13 +2232,17 @@
       if (!p) return;
       const yes = await askConfirm({
         title: 'Delete this payment?',
-        message: `${p.from} → ${p.to} — ${money(p.amount)}\n\nThis can't be undone.`,
+        message: `${p.from} → ${p.to} — ${money(p.amount)}\n\nYou can bring it back from "Recently deleted" for 30 days.`,
         okText: 'Delete', danger: true
       });
       if (!yes) return;
       await animateOut(document.querySelector(`#expense-list .row[data-id="p${id}"]`)); // slide the row away
-      undoPayment(id);
-      toast('Payment deleted');
+      const gid = currentId;
+      moveToTrash(cur(), 'payment', p);   // parked in Recently deleted, not gone for good
+      cur().payments = cur().payments.filter(x => x.id !== id);
+      save();
+      render();
+      toast('Payment deleted', null, { action: { label: 'Undo', fn: () => restoreFromTrash(gid, 'payment', id) } });
     }
 
     /* =========================================================
@@ -2680,6 +2847,9 @@
       } else {
         payCard.style.display = 'none';
       }
+
+      // ---- recently deleted (trash) ----
+      renderTrash();
 
       // ---- home dashboard (across ALL groups, from your point of view) ----
       const owedRows = [], oweRows = [];
