@@ -3705,6 +3705,11 @@
       const box = document.getElementById('home-chart');
       const card = document.getElementById('home-chart-card');
       if (!box || !card) return;
+      // Hidden on Home at the owner's request — the Insights screen ("Month by month")
+      // is where spending charts live now. Returning here keeps the card hidden even
+      // when there's spending (this render used to flip it back to display:block).
+      card.style.display = 'none';
+      return; // everything below is the old chart-drawing code, kept in case we move it to Insights later
       if (!meName) { card.style.display = 'none'; return; }
 
       // the last 6 months as "YYYY-MM" keys, oldest first
