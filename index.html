@@ -486,16 +486,22 @@
     .icon-btn:active { background: var(--surface-2); transform: scale(0.9); color: var(--text); }
     .icon-btn.danger:active { color: var(--neg); background: var(--neg-soft); }
 
-    /* the little round "initial" bubble next to a person's name */
+    /* the little round "initials" bubble next to a person's name. Its colour comes
+       from the person's NAME (see avatar() / nameHue in the script) via --ph, so
+       the same person always gets the same colour — on every screen and device. */
     .avatar {
       width: 36px; height: 36px; border-radius: 50%; flex: none;
       display: grid; place-items: center;
-      background: var(--brand-soft); color: var(--brand-text);
-      font-weight: 700; font-size: 14px; text-transform: uppercase;
+      background: color-mix(in srgb, var(--pc, var(--brand-text)) 15%, var(--surface));
+      color: var(--pc, var(--brand-text));
+      font-weight: 700; font-size: 13.5px; letter-spacing: 0.2px; text-transform: uppercase;
+      transition: background var(--normal) var(--ease), color var(--normal) var(--ease);
     }
-    .avatar.neg { background: var(--neg-soft); color: var(--neg); }
+    /* "owes" — a thin red ring, so the person's own colour stays recognisable */
+    .avatar.neg { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px color-mix(in srgb, var(--neg) 75%, transparent); }
     /* a smaller version for inline use (e.g. inside a sentence or a breakdown line) */
-    .avatar.sm { width: 22px; height: 22px; font-size: 10px; display: inline-grid; vertical-align: -6px; }
+    .avatar.sm { width: 22px; height: 22px; font-size: 9.5px; letter-spacing: 0; display: inline-grid; vertical-align: -6px; }
+    .avatar.sm.neg { box-shadow: 0 0 0 1.5px var(--surface), 0 0 0 2.5px color-mix(in srgb, var(--neg) 75%, transparent); }
     .person { display: flex; align-items: center; gap: 12px; min-width: 0; }
 
     /* the checkbox list for equal splits */
@@ -2222,6 +2228,8 @@
     function splitBreakdownHtml(e) {
       const shares = sharesOf(e);
       const meTag = n => (n === meName ? ' <span style="color:var(--muted)">(you)</span>' : '');
+      // each person's name with their little avatar in front
+      const who = n => `${avatar(n, 'sm')} ${escapeHtml(n)}${meTag(n)}`;
       const line = (left, right) =>
         `<div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid var(--line)">
            <span>${left}</span><span style="font-weight:700;white-space:nowrap">${right}</span></div>`;
@@ -2236,8 +2244,8 @@
           const expr = String(e.items[n]);
           const exprShown = /[+\-*/()]/.test(expr) ? `<span style="color:var(--muted)">${escapeHtml(expr)} = </span>` : '';
           return `<div style="padding:6px 0;border-top:1px solid var(--line)">
-            <div style="display:flex;justify-content:space-between;gap:12px"><span>${escapeHtml(n)}${meTag(n)}</span><span style="font-weight:700;white-space:nowrap">${money(fin)}</span></div>
-            <div style="color:var(--muted);font-size:12px">items ${exprShown}${money(pre)} &nbsp;+&nbsp; ${money(fin - pre)} tax &amp; tip</div>
+            <div style="display:flex;justify-content:space-between;gap:12px"><span>${who(n)}</span><span style="font-weight:700;white-space:nowrap">${money(fin)}</span></div>
+            <div style="color:var(--muted);font-size:12px;padding-left:28px">items ${exprShown}${money(pre)} &nbsp;+&nbsp; ${money(fin - pre)} tax &amp; tip</div>
           </div>`;
         }).join('');
         return head + rows;
@@ -2245,18 +2253,18 @@
 
       if (e.splitType === 'percent' && e.percents) {
         return Object.keys(shares).map(n =>
-          line(`${escapeHtml(n)}${meTag(n)} <span style="color:var(--muted)">· ${e.percents[n]}%</span>`, money(shares[n]))
+          line(`${who(n)} <span style="color:var(--muted)">· ${e.percents[n]}%</span>`, money(shares[n]))
         ).join('');
       }
 
       if (e.splitType === 'equal') {
         const each = Object.keys(shares).length ? shares[Object.keys(shares)[0]] : 0;
         const head = `<div style="color:var(--muted);font-size:12px;margin-bottom:2px">Split evenly — ${money(each)} each</div>`;
-        return head + Object.keys(shares).map(n => line(`${escapeHtml(n)}${meTag(n)}`, money(shares[n]))).join('');
+        return head + Object.keys(shares).map(n => line(who(n), money(shares[n]))).join('');
       }
 
       // custom exact amounts, or "one person owes it all"
-      return Object.keys(shares).map(n => line(`${escapeHtml(n)}${meTag(n)}`, money(shares[n]))).join('');
+      return Object.keys(shares).map(n => line(who(n), money(shares[n]))).join('');
     }
 
     // Tapping an expense row opens this read-only details view. The "Edit" button
@@ -2282,7 +2290,7 @@
          <div style="font-size:26px;font-weight:800">${money(e.amount)}</div>
          ${netTxt ? `<div class="${netCls}" style="font-weight:700;margin-top:2px">${netTxt}</div>` : ''}
          <div style="color:var(--muted);font-size:13px;line-height:2;margin-top:10px">
-           <div><b style="color:var(--text)">Paid by</b> &nbsp;${escapeHtml(e.payer)}</div>
+           <div><b style="color:var(--text)">Paid by</b> &nbsp;${avatar(e.payer, 'sm')} ${escapeHtml(e.payer)}</div>
            ${e.date ? `<div><b style="color:var(--text)">Date</b> &nbsp;${escapeHtml(fmtDate(e.date))}</div>` : ''}
            <div><b style="color:var(--text)">Split</b> &nbsp;${how}</div>
          </div>
@@ -3020,10 +3028,15 @@
       const parts = [];
       let y = 0;
 
-      // a person's initial in a round bubble (like the avatars in the app)
-      const bubble = (x, cy, name, red) =>
-        `<circle cx="${x + 28}" cy="${cy}" r="28" fill="${red ? c.negSoft : c.brandSoft}"/>
-         <text x="${x + 28}" y="${cy + 10}" text-anchor="middle" font-size="26" font-weight="700" fill="${red ? c.neg : c.brandText}">${esc(String(name || '?').trim().charAt(0).toUpperCase() || '?')}</text>`;
+      // a person's initials in a round bubble, in their own colour (the same colour as
+      // their avatar in the app); "red" adds the thin "owes" ring
+      const bubble = (x, cy, name, red) => {
+        const ini = initialsOf(name).toUpperCase();
+        return `<circle cx="${x + 28}" cy="${cy}" r="28" fill="${c.bg}"/>
+         <circle cx="${x + 28}" cy="${cy}" r="28" fill="${nameColor(name, true)}"/>
+         ${red ? `<circle cx="${x + 28}" cy="${cy}" r="31" fill="none" stroke="${c.neg}" stroke-width="2.5" opacity="0.8"/>` : ''}
+         <text x="${x + 28}" y="${cy + (ini.length > 1 ? 8 : 10)}" text-anchor="middle" font-size="${ini.length > 1 ? 22 : 26}" font-weight="700" fill="${nameColor(name)}">${esc(ini)}</text>`;
+      };
       const heading = (label, top) =>
         `<text x="${pad}" y="${top}" font-size="22" font-weight="700" letter-spacing="1.5" fill="${c.muted}">${esc(label.toUpperCase())}</text>`;
       const divider = top => `<line x1="${pad}" x2="${W - pad}" y1="${top}" y2="${top}" stroke="${c.line}" stroke-width="2"/>`;
@@ -3236,10 +3249,18 @@
       return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
     }
 
-    // The little round bubble with a person's initial (used in lists).
+    // A person's initials: "Alex" → "A", "Priya Patel" → "PP" (first + last word).
+    function initialsOf(name) {
+      const words = String(name || '').trim().split(/\s+/).filter(Boolean);
+      if (!words.length) return '?';
+      const first = words[0].charAt(0);
+      return words.length > 1 ? first + words[words.length - 1].charAt(0) : first;
+    }
+    // The little round bubble with a person's initials (used in lists). Its colour is
+    // worked out from the name every time (nothing is stored), so it's always the same.
+    // cls: extra classes — 'neg' adds the "owes" ring, 'sm' makes a small inline one.
     function avatar(name, cls) {
-      const initial = String(name || '?').trim().charAt(0) || '?';
-      return `<span class="avatar${cls ? ' ' + cls : ''}">${escapeHtml(initial)}</span>`;
+      return `<span class="avatar${cls ? ' ' + cls : ''}" style="--ph:${nameHue(name)}" aria-hidden="true">${escapeHtml(initialsOf(name))}</span>`;
     }
 
     // A friendly "nothing here yet" block with a small drawing.
@@ -3655,7 +3676,9 @@
     function nameColor(name, soft) {
       const dark = currentTheme() === 'dark';
       const h = nameHue(name), s = dark ? 60 : 58, l = dark ? 70 : 36;
-      return soft ? `hsl(${h} ${s}% ${l}% / 0.16)` : `hsl(${h} ${s}% ${l}%)`;
+      // (the older comma style of hsl/hsla is used here because it also works when the
+      //  SVG is turned into a PNG for sharing, on every phone)
+      return soft ? `hsla(${h}, ${s}%, ${l}%, 0.16)` : `hsl(${h}, ${s}%, ${l}%)`;
     }
 
     /* =========================================================
@@ -3960,7 +3983,7 @@
         payCard.style.display = 'block';
         document.getElementById('payments-list').innerHTML = cur().payments.map(p => `
           <div class="row">
-            <span>${escapeHtml(p.from)} paid <b>${escapeHtml(p.to)}</b> ${money(p.amount)}</span>
+            <span>${avatar(p.from, 'sm')} ${escapeHtml(p.from)} paid ${avatar(p.to, 'sm')} <b>${escapeHtml(p.to)}</b> ${money(p.amount)}</span>
             <button class="mini outline" onclick="undoPayment(${p.id})" aria-label="Undo ${escapeAttr(p.from)}’s ${money(p.amount)} payment to ${escapeAttr(p.to)}">Undo</button>
           </div>`).join('');
       } else {
