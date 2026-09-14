@@ -171,6 +171,10 @@
     @keyframes pop       { 0% { transform: scale(0.96); } 60% { transform: scale(1.03); } 100% { transform: none; } }
     @keyframes row-out   { to { opacity: 0; transform: translateX(24px); max-height: 0; padding-top: 0; padding-bottom: 0; } }
     @keyframes spin      { to { transform: rotate(360deg); } }
+    @keyframes shimmer   { to { background-position: -200% 0; } }
+    @keyframes sheet-down { to { opacity: 0; transform: translateY(24px); } }
+    @keyframes fade-out  { to { opacity: 0; } }
+    @keyframes settle-pop { 0% { transform: scale(0.92); opacity: 0; } 60% { transform: scale(1.04); opacity: 1; } 100% { transform: none; } }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
     }
@@ -345,7 +349,7 @@
     }
     nav button .icon svg { width: 22px; height: 22px; }
     nav button.active { color: var(--brand-text); font-weight: 600; }
-    nav button.active .icon { background: var(--brand-soft); }
+    nav button.active .icon { background: var(--brand-soft); animation: pop 300ms var(--ease); }
 
     /* ---- General layout ---- */
     main { padding: 16px; max-width: 600px; margin: 0 auto; }
@@ -793,6 +797,10 @@
     /* ---- The modal sheet (replaces the browser's confirm/prompt boxes) ---- */
     #modal-host { position: fixed; inset: 0; z-index: 1300; display: none; }
     #modal-host.open { display: flex; align-items: flex-end; justify-content: center; }
+    /* on the way out: the sheet slides back down and the dim backdrop fades (see closeSheet) */
+    #modal-host.closing { pointer-events: none; }
+    #modal-host.closing .sheet { animation: sheet-down var(--fast) var(--ease) forwards; }
+    #modal-host.closing .modal-backdrop { animation: fade-out var(--fast) var(--ease) forwards; }
     @media (min-width: 520px) { #modal-host.open { align-items: center; } }
     .modal-backdrop { position: absolute; inset: 0; background: var(--overlay); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); animation: fade-in var(--fast) var(--ease) both; }
     .sheet {
@@ -827,6 +835,29 @@
     .sheet .share-actions button { margin-top: 8px; }
     .sheet .share-actions .btn-row button { margin-top: 8px; }
     .sheet .share-actions .close-link { display: block; margin: 4px auto 0; }
+
+    /* ---- Delight & motion ---- */
+    /* Skeleton "placeholder" cards shown while your data comes down from the cloud
+       after logging in — soft grey shapes that shimmer where the real content will be. */
+    #cloud-skeleton { display: none; }
+    body.loading-cloud main > .page { display: none !important; }
+    body.loading-cloud #cloud-skeleton { display: block; animation: fade-in var(--normal) var(--ease) both; }
+    .skel {
+      display: block; border-radius: 8px;
+      background: linear-gradient(90deg, var(--surface-2) 25%, color-mix(in srgb, var(--surface-2) 45%, var(--surface)) 50%, var(--surface-2) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s linear infinite;
+    }
+    .skel.line { height: 12px; margin: 8px 0; }
+    .skel.big { height: 28px; width: 60%; margin: 12px auto 16px; }
+    .skel.circle { width: 36px; height: 36px; border-radius: 50%; flex: none; margin: 0; }
+    .skel-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+    .skel-row:last-child { border-bottom: none; }
+    .skel-row > div { flex: 1; }
+    /* the confetti canvas floats over everything but never blocks a tap */
+    #confetti { position: fixed; inset: 0; z-index: 1250; pointer-events: none; }
+    /* the "all settled up" state gets a little pop the moment it happens */
+    .empty-state.celebrate { animation: settle-pop 500ms var(--ease) both; }
   </style>
 </head>
 
@@ -912,6 +943,30 @@
   </header>
 
   <main>
+    <!-- Placeholder shapes shown while your data loads from the cloud (see setCloudLoading). -->
+    <div id="cloud-skeleton" aria-busy="true" aria-live="polite">
+      <span class="sr-only">Loading your data…</span>
+      <div class="card hero" aria-hidden="true">
+        <span class="skel line" style="width:44%;margin:2px auto 0"></span>
+        <span class="skel big"></span>
+        <span class="skel line" style="height:8px;margin:0"></span>
+      </div>
+      <div class="card" aria-hidden="true">
+        <span class="skel line" style="width:32%;margin:0 0 14px"></span>
+        <div class="stat-grid">
+          <div class="stat"><span class="skel line" style="width:70%;margin:4px auto"></span><span class="skel line" style="height:9px;width:50%;margin:6px auto 2px"></span></div>
+          <div class="stat"><span class="skel line" style="width:70%;margin:4px auto"></span><span class="skel line" style="height:9px;width:50%;margin:6px auto 2px"></span></div>
+          <div class="stat"><span class="skel line" style="width:70%;margin:4px auto"></span><span class="skel line" style="height:9px;width:50%;margin:6px auto 2px"></span></div>
+        </div>
+      </div>
+      <div class="card" aria-hidden="true">
+        <span class="skel line" style="width:36%;margin:0 0 4px"></span>
+        <div class="skel-row"><span class="skel circle"></span><div><span class="skel line" style="width:45%"></span><span class="skel line" style="height:9px;width:30%"></span></div><span class="skel line" style="width:64px"></span></div>
+        <div class="skel-row"><span class="skel circle"></span><div><span class="skel line" style="width:55%"></span><span class="skel line" style="height:9px;width:35%"></span></div><span class="skel line" style="width:64px"></span></div>
+        <div class="skel-row"><span class="skel circle"></span><div><span class="skel line" style="width:40%"></span><span class="skel line" style="height:9px;width:28%"></span></div><span class="skel line" style="width:64px"></span></div>
+      </div>
+    </div>
+
     <!-- ============ HOME / DASHBOARD ============ -->
     <section id="page-home" class="page active">
       <div class="card hero home-hero">
@@ -1470,10 +1525,13 @@
 
     let sheetResolve = null; // the "answer" function for the sheet that's currently open
     let sheetOpener = null;  // what had keyboard focus before the sheet opened (we hand it back after)
+    let sheetCloseTimer = null; // waits for the closing animation before clearing the sheet away
     // Draws a sheet. "resolver" is the function to call with the answer when it closes.
     function openSheet(innerHtml, resolver) {
       const host = document.getElementById('modal-host');
       if (sheetResolve) closeSheet(null);   // only one sheet at a time: cancel any older one first
+      clearTimeout(sheetCloseTimer);        // (and if one was mid-way through closing, take over now)
+      host.classList.remove('closing');
       sheetResolve = resolver;
       sheetOpener = document.activeElement;
       host.innerHTML =
@@ -1486,8 +1544,15 @@
     }
     function closeSheet(result) {
       const host = document.getElementById('modal-host');
-      host.classList.remove('open');
-      host.innerHTML = '';
+      if (host.classList.contains('open') && !reducedMotion()) {
+        // let the sheet slide away first, then clear it out
+        host.classList.add('closing');
+        clearTimeout(sheetCloseTimer);
+        sheetCloseTimer = setTimeout(() => { host.classList.remove('open'); host.classList.remove('closing'); host.innerHTML = ''; }, 160);
+      } else {
+        host.classList.remove('open');
+        host.innerHTML = '';
+      }
       const done = sheetResolve; sheetResolve = null;
       // put keyboard focus back where it was (if that element is still on the page)
       const back = sheetOpener; sheetOpener = null;
@@ -1571,10 +1636,15 @@
       if (!meName) await ensureMeName();
     }
 
+    // true when the phone/computer asks for less motion — every animation checks this
+    function reducedMotion() {
+      return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    }
+
     // Fades a list row out before it disappears (returns a promise so callers can "await" it).
     function animateOut(el) {
       return new Promise(resolve => {
-        if (!el || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) return resolve();
+        if (!el || reducedMotion()) return resolve();
         el.classList.add('leaving');
         setTimeout(resolve, 200);
       });
@@ -1667,10 +1737,30 @@
       }
     }
     async function afterLogin() {
+      setCloudLoading(true);   // placeholder shapes while your data comes down
+      showApp();
       await pullCloud();
       render();
-      showApp();
+      await setCloudLoading(false);
       await firstRunSetup(); // welcome + "what's your name?" (only when needed)
+    }
+
+    // Shows (true) or hides (false) the shimmering placeholder cards while the cloud
+    // data loads. Hiding waits so a very fast load doesn't just flash them.
+    let cloudLoadingSince = 0;
+    async function setCloudLoading(on) {
+      if (on) {
+        cloudLoadingSince = Date.now();
+        document.body.classList.add('loading-cloud');
+        return;
+      }
+      if (!document.body.classList.contains('loading-cloud')) return;
+      const wait = reducedMotion() ? 0 : Math.max(0, 350 - (Date.now() - cloudLoadingSince));
+      if (wait) await new Promise(r => setTimeout(r, wait));
+      document.body.classList.remove('loading-cloud');
+      // replay the little fade-up on the screen that's now revealed
+      const page = document.querySelector('.page.active');
+      if (page) { page.classList.remove('active'); void page.offsetWidth; page.classList.add('active'); }
     }
 
     // Runs once when the app opens: shows the app if you're already
@@ -1710,7 +1800,13 @@
       try {
         const { data: { session } } = await db.auth.getSession();
         if (session && recoveryMode) { user = session.user; showResetForm(); }
-        else if (session) { user = session.user; await pullCloud(); render(); showApp(); await firstRunSetup(); }
+        else if (session) {
+          user = session.user;
+          setCloudLoading(true); showApp();             // show the app straight away, with placeholders…
+          await pullCloud(); render();                  // …fill in the real data…
+          await setCloudLoading(false);                 // …then reveal it
+          await firstRunSetup();
+        }
         else { showLogin(); }
       } catch (e) { showLogin(); }
 
@@ -3804,9 +3900,9 @@
       const stats = `<div class="card">
         <h2>At a glance<span class="count">${d.exps.length} expense${d.exps.length === 1 ? '' : 's'}</span></h2>
         <div class="stat-grid">
-          <div class="stat"><div class="v">${money(d.thisMonth)}</div><div class="k">${escapeHtml(monthName)}</div></div>
-          <div class="stat"><div class="v">${money(d.avg)}</div><div class="k">Avg. expense</div></div>
-          <div class="stat"><div class="v">${money(d.total)}</div><div class="k">All time</div></div>
+          <div class="stat"><div class="v" data-count="ins-month:${g.id}" data-to="${d.thisMonth}">${money(d.thisMonth)}</div><div class="k">${escapeHtml(monthName)}</div></div>
+          <div class="stat"><div class="v" data-count="ins-avg:${g.id}" data-to="${d.avg}">${money(d.avg)}</div><div class="k">Avg. expense</div></div>
+          <div class="stat"><div class="v" data-count="ins-total:${g.id}" data-to="${d.total}">${money(d.total)}</div><div class="k">All time</div></div>
         </div>
         ${payerLine}
       </div>`;
@@ -3893,6 +3989,89 @@
     }
 
     /* =========================================================
+       DELIGHT: counting numbers, and confetti when a group is settled
+       Small touches only — every one of them switches off when the
+       phone asks for reduced motion (see reducedMotion()).
+       ========================================================= */
+    // Any element written as <span data-count="some-key" data-to="12.5"> gets its number
+    // rolled from the value it showed last time to the new one. The "key" is how we
+    // recognise the same number across redraws (e.g. "bal:groupId:Alex").
+    // data-int means "a whole number" (a count) rather than money.
+    const shownNums = {}; // key → the number last shown on screen
+    function runCountUps(root) {
+      (root || document).querySelectorAll('[data-count]').forEach(el => {
+        const key = el.dataset.count, to = parseFloat(el.dataset.to) || 0;
+        const fmt = el.dataset.int != null ? n => String(Math.round(n)) : money;
+        const from = shownNums[key];
+        shownNums[key] = to;
+        if (from === undefined || Math.abs(from - to) < 0.005 || reducedMotion()) { el.textContent = fmt(to); return; }
+        const start = performance.now(), dur = 650;
+        const step = now => {
+          const t = Math.min(1, (now - start) / dur), eased = 1 - Math.pow(1 - t, 3); // fast start, gentle finish
+          el.textContent = fmt(from + (to - from) * eased);
+          if (t < 1 && el.isConnected) requestAnimationFrame(step); else el.textContent = fmt(to);
+        };
+        requestAnimationFrame(step);
+      });
+    }
+
+    // A short burst of confetti drawn on a <canvas> — no library, and it never
+    // blocks taps (see #confetti in the styles). Cleans itself up when done.
+    let confettiRaf = null;
+    function celebrate() {
+      if (reducedMotion()) return;
+      let cv = document.getElementById('confetti');
+      if (!cv) { cv = document.createElement('canvas'); cv.id = 'confetti'; cv.setAttribute('aria-hidden', 'true'); document.body.appendChild(cv); }
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const W = cv.width = Math.round(innerWidth * dpr), H = cv.height = Math.round(innerHeight * dpr);
+      cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
+      const ctx = cv.getContext('2d');
+      const colors = [themeColor('--brand'), themeColor('--brand-bright'), themeColor('--pos'), themeColor('--amber'), '#2563eb', '#be185d', '#6d28d9', cur() && cur().color]
+        .filter(Boolean);
+      const pieces = [];
+      for (let i = 0; i < 140; i++) {
+        pieces.push({
+          x: Math.random() * W, y: -20 * dpr - Math.random() * H * 0.25,
+          vx: (Math.random() - 0.5) * 1.6 * dpr, vy: (2 + Math.random() * 3) * dpr,
+          w: (6 + Math.random() * 5) * dpr, h: (8 + Math.random() * 6) * dpr,
+          rot: Math.random() * Math.PI, spin: (Math.random() - 0.5) * 0.25, wob: Math.random() * Math.PI * 2,
+          color: colors[i % colors.length]
+        });
+      }
+      const started = performance.now(), life = 2600;
+      cancelAnimationFrame(confettiRaf);
+      const frame = now => {
+        const t = now - started;
+        ctx.clearRect(0, 0, W, H);
+        ctx.globalAlpha = t > life - 500 ? Math.max(0, (life - t) / 500) : 1; // fade at the end
+        pieces.forEach(p => {
+          p.vy += 0.05 * dpr; p.vx *= 0.99; p.wob += 0.08;
+          p.x += p.vx + Math.sin(p.wob) * 0.6 * dpr; p.y += p.vy; p.rot += p.spin;
+          ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+          ctx.fillStyle = p.color; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * (0.6 + Math.abs(Math.sin(p.wob)) * 0.4));
+          ctx.restore();
+        });
+        if (t < life) confettiRaf = requestAnimationFrame(frame);
+        else cv.remove();
+      };
+      confettiRaf = requestAnimationFrame(frame);
+    }
+
+    // Remembers whether each group was settled the last time we looked, so we can
+    // spot the moment it BECOMES settled (and celebrate once, not on every redraw).
+    // "Settled" means the same thing as the Settle-up card: no payments are needed.
+    // (That uses amounts rounded to the cent, so a stray fraction of a cent never
+    //  stops a group from counting as settled.)
+    const settledSeen = {}; // group id → true / false
+    function checkJustSettled(g, settlements) {
+      const active = g.expenses.length > 0 || g.payments.length > 0;
+      const settled = active && settlements.length === 0;
+      const was = settledSeen[g.id];
+      settledSeen[g.id] = settled;
+      return was === false && settled;
+    }
+
+    /* =========================================================
        DRAWING EVERYTHING ON SCREEN
        ========================================================= */
     function render() {
@@ -3954,11 +4133,13 @@
 
       // ---- balances ----
       const balance = calculateBalances();
+      // (the amounts carry data-count so they roll to their new value — see runCountUps)
       document.getElementById('balances').innerHTML = people.length ? people.map(p => {
         const amt = balance[p];
         const cls = amt > 0.005 ? 'pos' : amt < -0.005 ? 'neg' : '';
-        const text = amt > 0.005 ? 'is owed ' + money(amt)
-                   : amt < -0.005 ? 'owes ' + money(-amt) : 'settled up';
+        const num = `<span data-count="bal:${currentId}:${escapeAttr(p)}" data-to="${Math.abs(amt)}">${money(Math.abs(amt))}</span>`;
+        const text = amt > 0.005 ? 'is owed ' + num
+                   : amt < -0.005 ? 'owes ' + num : 'settled up';
         return `<div class="row">
           <div class="person">${avatar(p, cls === 'neg' ? 'neg' : '')}<span class="title">${escapeHtml(p)}</span></div>
           <span class="amount ${cls}" style="font-weight:${cls ? 700 : 500}">${text}</span>
@@ -3967,6 +4148,11 @@
 
       // ---- settlements ----
       lastSettlements = calculateSettlements();
+      const justSettled = checkJustSettled(cur(), lastSettlements); // did this group JUST become all square?
+      if (justSettled) {
+        celebrate(); // 🎉 confetti
+        toast(`${cur().emoji} ${cur().name} is all settled up!`, 'ok');
+      }
       document.getElementById('settlements').innerHTML = lastSettlements.length
         ? lastSettlements.map((s, idx) => `
             <div class="row settle">
@@ -3976,6 +4162,7 @@
               <button class="mini" onclick="markPaid(${idx})" aria-label="Mark ${escapeAttr(s.from)}’s ${money(s.amt)} payment to ${escapeAttr(s.to)} as paid">Mark paid</button>
             </div>`).join('')
         : emptyState('check', 'Everyone is settled up 🎉', cur().expenses.length ? 'No payments needed right now.' : 'Add an expense and the settle-up plan appears here.');
+      if (justSettled) { const es = document.querySelector('#settlements .empty-state'); if (es) es.classList.add('celebrate'); }
 
       // ---- recorded payments ----
       const payCard = document.getElementById('payments-card');
@@ -4012,15 +4199,18 @@
       oweRows.sort((a, b) => b.amt - a.amt);
 
       const netEl = document.getElementById('home-net');
-      let netText, netCls;
-      if (!inAnyGroup)            { netText = meName ? 'No balances yet' : 'Tell us your name to get started'; netCls = ''; }
-      else if (net > 0.005)       { netText = 'You are owed ' + money(net); netCls = 'pos'; }
-      else if (net < -0.005)      { netText = 'You owe ' + money(-net); netCls = 'neg'; }
-      else                        { netText = "You're all settled up 🎉"; netCls = ''; }
-      if (netEl.textContent !== netText) {           // give the number a little "pop" when it changes
+      let netText, netHtml, netCls;
+      // (the amount is wrapped so it can roll to its new value — see runCountUps)
+      const netNum = (key, n) => `<span data-count="${key}" data-to="${n}">${money(n)}</span>`;
+      if (!inAnyGroup)            { netText = meName ? 'No balances yet' : 'Tell us your name to get started'; netHtml = escapeHtml(netText); netCls = ''; }
+      else if (net > 0.005)       { netText = 'You are owed ' + money(net); netHtml = 'You are owed ' + netNum('net-owed', net); netCls = 'pos'; }
+      else if (net < -0.005)      { netText = 'You owe ' + money(-net); netHtml = 'You owe ' + netNum('net-owe', -net); netCls = 'neg'; }
+      else                        { netText = "You're all settled up 🎉"; netHtml = escapeHtml(netText); netCls = ''; }
+      if (lastNetText !== null && lastNetText !== netText) { // give the number a little "pop" when it changes
         netEl.classList.remove('popped'); void netEl.offsetWidth; netEl.classList.add('popped');
       }
-      netEl.textContent = netText;
+      lastNetText = netText;
+      netEl.innerHTML = netHtml;
       netEl.className = netCls + (netEl.classList.contains('popped') ? ' popped' : '');
 
       // the in-vs-out bar under the headline
@@ -4032,7 +4222,7 @@
         // the bar is a picture; the aria-label says the same thing in words for screen readers
         meter.innerHTML = `
           <div class="home-meter" role="img" aria-label="${inPct}% of the money in play is owed to you, ${100 - inPct}% is what you owe"><span class="in" style="width:${inPct}%"></span><span class="out" style="width:${100 - inPct}%"></span></div>
-          <div class="home-legend"><span>Owed to you <b class="pos">${money(totalOwed)}</b></span><span>You owe <b class="neg">${money(totalOwe)}</b></span></div>`;
+          <div class="home-legend"><span>Owed to you <b class="pos" data-count="home-owed" data-to="${totalOwed}">${money(totalOwed)}</b></span><span>You owe <b class="neg" data-count="home-owe" data-to="${totalOwe}">${money(totalOwe)}</b></span></div>`;
       } else {
         meter.innerHTML = '';
       }
@@ -4050,9 +4240,9 @@
       const monthName = new Date().toLocaleString(undefined, { month: 'long' });
       document.getElementById('home-month').innerHTML = monthCount
         ? `<div class="stat-grid">
-             <div class="stat"><div class="v">${money(monthMine)}</div><div class="k">Your share</div></div>
-             <div class="stat"><div class="v">${money(monthTotal)}</div><div class="k">All groups</div></div>
-             <div class="stat"><div class="v">${monthCount}</div><div class="k">Expense${monthCount === 1 ? '' : 's'}</div></div>
+             <div class="stat"><div class="v" data-count="month-mine" data-to="${monthMine}">${money(monthMine)}</div><div class="k">Your share</div></div>
+             <div class="stat"><div class="v" data-count="month-total" data-to="${monthTotal}">${money(monthTotal)}</div><div class="k">All groups</div></div>
+             <div class="stat"><div class="v" data-count="month-count" data-int data-to="${monthCount}">${monthCount}</div><div class="k">Expense${monthCount === 1 ? '' : 's'}</div></div>
            </div>`
         : `<div class="empty" style="padding:8px 0 4px">Nothing spent in ${escapeHtml(monthName)} yet</div>`;
 
@@ -4101,7 +4291,11 @@
       // ---- account ----
       const acct = document.getElementById('account-email');
       if (acct) acct.textContent = user ? ('Signed in as ' + user.email) : '';
+
+      // ---- roll any numbers that changed to their new values ----
+      runCountUps();
     }
+    let lastNetText = null; // what the Home headline said last time (to know when to "pop")
 
     // first draw, then check login and sync
     resetForm(); // sets today's date and a clean form
